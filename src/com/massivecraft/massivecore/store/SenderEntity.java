@@ -8,11 +8,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 
+import com.google.common.base.Objects;
+import com.massivecraft.massivecore.Named;
 import com.massivecraft.massivecore.mixin.Mixin;
 import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.util.IdUtil;
+import com.massivecraft.massivecore.util.PermUtil;
 
-public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
+public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E> implements Named
 {
 	// -------------------------------------------- //
 	// FIELDS
@@ -38,7 +41,7 @@ public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
 		this.senderInitiated = true;
 	}
 
-	public String getName()
+	@Override public String getName()
 	{
 		return IdUtil.getName(this.getId());
 	}
@@ -59,7 +62,30 @@ public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
 	}
 	
 	// -------------------------------------------- //
-	// SENDER UTIL METHOD MIRRORING
+	// CONVENIENCE: DATABASE
+	// -------------------------------------------- //
+	
+	// GENERIC
+	public <T> T convertGet(T value, T defaultValue, String permission)
+	{
+		// Create
+		T ret = super.convertGet(value, defaultValue);
+		
+		// Permission Requirement
+		if ( ! Objects.equal(value, defaultValue) && ! PermUtil.has(this.getSender(), permission)) return defaultValue;
+		
+		// Return
+		return ret;
+	}
+	
+	// BOOLEAN
+	public boolean convertGet(Boolean value, String permission)
+	{
+		return this.convertGet(value, false, permission);
+	}
+	
+	// -------------------------------------------- //
+	// TYPE
 	// -------------------------------------------- //
 	
 	// IS
@@ -86,8 +112,11 @@ public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
 		return IdUtil.getAsConsole(this.getSender());
 	}
 	
+	// -------------------------------------------- //
 	// ONLINE / OFFLINE
-	
+	// -------------------------------------------- //
+	// TODO: Update with new presence enumeration?
+
 	public boolean isOnline()
 	{
 		return Mixin.isOnline(this.getId());
@@ -113,8 +142,36 @@ public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
 		return Mixin.hasPlayedBefore(this.getId());
 	}
 	
-	// DISPLAY NAME
+	public String getIp()
+	{
+		return Mixin.getIp(this.getId());
+	}
 	
+	public boolean isVisible()
+	{
+		return Mixin.isVisible(this);
+	}
+	
+	public boolean isVisible(Object watcherObject)
+	{
+		return Mixin.isVisible(this, watcherObject);
+	}
+	
+	public boolean isOnline(Object watcherObject)
+	{
+		return this.isOnline() && this.isVisible(watcherObject);
+	}
+	
+	public boolean isOffline(Object watcherObject)
+	{
+		return ! this.isOnline(watcherObject);
+	}
+	
+	// -------------------------------------------- //
+	// DISPLAY NAME
+	// -------------------------------------------- //
+	
+	// TODO: Remove this one shortly.
 	@Deprecated
 	public String getDisplayName()
 	{
@@ -126,24 +183,16 @@ public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
 		return Mixin.getDisplayName(this.getId(), watcherObject);
 	}
 	
-	// CONVENIENCE SEND MESSAGE
-	
-	public boolean sendMessage(String message)
+	public Mson getDisplayNameMson(Object watcherObject)
 	{
-		return Mixin.messageOne(this.getId(), message);
+		return Mixin.getDisplayNameMson(this.getId(), watcherObject);
 	}
 	
-	public boolean sendMessage(String... messages)
-	{
-		return Mixin.messageOne(this.getId(), messages);
-	}
+	// -------------------------------------------- //
+	// MSG / MESSAGE
+	// -------------------------------------------- //
 	
-	public boolean sendMessage(Collection<String> messages)
-	{
-		return Mixin.messageOne(this.getId(), messages);
-	}
-	
-	// CONVENIENCE MSG
+	// MSG
 	
 	public boolean msg(String msg)
 	{
@@ -160,24 +209,26 @@ public abstract class SenderEntity<E extends SenderEntity<E>> extends Entity<E>
 		return Mixin.msgOne(this.getId(), msgs);
 	}
 	
-	// CONVENIENCE SEND RAW
+	// MESSAGE
 	
-	public boolean sendRaw(Mson mson)
+	public boolean message(Object message)
 	{
-		return Mixin.messageRawOne(this.getId(), mson);
+		return Mixin.messageOne(this.getId(), message);
 	}
 	
-	public boolean sendRaw(Mson... msons)
+	public boolean message(Object... messages)
 	{
-		return Mixin.messageRawOne(this.getId(), msons);
+		return Mixin.messageOne(this.getId(), messages);
 	}
 	
-	public boolean sendRaw(Collection<Mson> msons)
+	public boolean message(Collection<?> messages)
 	{
-		return Mixin.messageRawOne(this.getId(), msons);
+		return Mixin.messageOne(this.getId(), messages);
 	}
 	
-	// CONVENIENCE GAME-MODE
+	// -------------------------------------------- //
+	// GAME-MODE
+	// -------------------------------------------- //
 	
 	public GameMode getGameMode(GameMode def)
 	{

@@ -12,6 +12,13 @@ import com.massivecraft.massivecore.xlib.gson.JsonElement;
 public class MStore
 {
 	// -------------------------------------------- //
+	// CONSTANTS
+	// -------------------------------------------- //
+	// This class also serves the purpose of containing database related constants.
+	
+	public static final boolean DEBUG_ENABLED = false;
+	
+	// -------------------------------------------- //
 	// DRIVER REGISTRY
 	// -------------------------------------------- //
 	
@@ -102,6 +109,5 @@ public class MStore
 		if (driver == null) return null;
 		return driver.getDb(uri.toString());
 	}
-	
 	
 }

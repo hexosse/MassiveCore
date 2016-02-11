@@ -1,6 +1,9 @@
 package com.massivecraft.massivecore.store;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.WatchService;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -9,11 +12,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Map.Entry;
+import java.util.Set;
 
 import com.massivecraft.massivecore.util.DiscUtil;
-import com.massivecraft.massivecore.xlib.gson.JsonElement;
+import com.massivecraft.massivecore.xlib.gson.JsonObject;
 import com.massivecraft.massivecore.xlib.gson.JsonParser;
 
 public class DriverFlatfile extends DriverAbstract
@@ -61,7 +64,7 @@ public class DriverFlatfile extends DriverAbstract
 			return false;
 		}
 	}
-
+	
 	@Override
 	public Set<String> getCollnames(Db db)
 	{
@@ -84,7 +87,7 @@ public class DriverFlatfile extends DriverAbstract
 		File fileTo = new File(dir, to);
 		return fileFrom.renameTo(fileTo);
 	}
-
+	
 	@Override
 	public boolean containsId(Coll<?> coll, String id)
 	{
@@ -123,7 +126,7 @@ public class DriverFlatfile extends DriverAbstract
 		
 		// Get Directory
 		File directory = getDirectory(coll);
-		if ( ! directory.isDirectory()) return ret;
+		if ( ! directory.isDirectory()) return ret; // TODO: Throw exception instead?
 		
 		// For each .json file
 		for (File file : directory.listFiles(JsonFileFilter.get()))
@@ -139,21 +142,21 @@ public class DriverFlatfile extends DriverAbstract
 	}
 	
 	@Override
-	public Entry<JsonElement, Long> load(Coll<?> coll, String id)
+	public Entry<JsonObject, Long> load(Coll<?> coll, String id)
 	{
 		File file = fileFromId(coll, id);
 		return loadFile(file);
 	}
 	
-	public Entry<JsonElement, Long> loadFile(File file)
+	public Entry<JsonObject, Long> loadFile(File file)
 	{
 		long mtime = file.lastModified();
-		JsonElement raw = loadFileJson(file);
+		JsonObject raw = loadFileJson(file);
 		
-		return new SimpleEntry<JsonElement, Long>(raw, mtime);
+		return new SimpleEntry<JsonObject, Long>(raw, mtime);
 	}
 	
-	public JsonElement loadFileJson(File file)
+	public JsonObject loadFileJson(File file)
 	{
 		String content = DiscUtil.readCatch(file);
 		if (content == null) return null;
@@ -161,14 +164,14 @@ public class DriverFlatfile extends DriverAbstract
 		content = content.trim();
 		if (content.length() == 0) return null;
 		
-		return new JsonParser().parse(content);
+		return new JsonParser().parse(content).getAsJsonObject();
 	}
 	
 	@Override
-	public Map<String, Entry<JsonElement, Long>> loadAll(Coll<?> coll)
+	public Map<String, Entry<JsonObject, Long>> loadAll(Coll<?> coll)
 	{
 		// Create Ret
-		Map<String, Entry<JsonElement, Long>> ret = null;
+		Map<String, Entry<JsonObject, Long>> ret = null;
 		
 		// Get Directory
 		File directory = getDirectory(coll);
@@ -178,7 +181,7 @@ public class DriverFlatfile extends DriverAbstract
 		File[] files = directory.listFiles(JsonFileFilter.get());
 		
 		// Create Ret
-		ret = new LinkedHashMap<String, Entry<JsonElement, Long>>(files.length);
+		ret = new LinkedHashMap<String, Entry<JsonObject, Long>>(files.length);
 		
 		// For Each Found
 		for (File file : files)
@@ -187,7 +190,7 @@ public class DriverFlatfile extends DriverAbstract
 			String id = idFromFile(file);
 			
 			// Get Entry
-			Entry<JsonElement, Long> entry = loadFile(file);
+			Entry<JsonObject, Long> entry = loadFile(file);
 			// NOTE: The entry can be a failed one with null and 0.
 			// NOTE: We add it anyways since it's an informative failure.
 			// NOTE: This is supported by our defined specification.
@@ -199,21 +202,71 @@ public class DriverFlatfile extends DriverAbstract
 		// Return Ret
 		return ret;
 	}
-
+	
 	@Override
-	public long save(Coll<?> coll, String id, JsonElement data)
+	public long save(Coll<?> coll, String id, JsonObject data)
 	{
 		File file = fileFromId(coll, id);
 		String content = coll.getGson().toJson(data);
 		if (DiscUtil.writeCatch(file, content) == false) return 0;
 		return file.lastModified();
 	}
-
+	
 	@Override
 	public void delete(Coll<?> coll, String id)
 	{
 		File file = fileFromId(coll, id);
 		file.delete();
+	}
+	
+	private boolean supportsPusher = this.supportsPusherCalc();
+	private boolean supportsPusherCalc()
+	{
+		boolean ret = false;
+		WatchService watchService = null;
+		try
+		{
+			watchService = FileSystems.getDefault().newWatchService();
+			ret = ! watchService.getClass().getName().equals("sun.nio.fs.PollingWatchService");
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if (watchService != null)
+				{
+					watchService.close();
+				}
+			}
+			catch (Exception e)
+			{
+				e.printStackTrace();
+			}
+		}
+		return ret;
+	}
+	
+	@Override
+	public boolean supportsPusher()
+	{
+		return this.supportsPusher;
+	}
+	
+	@Override
+	public PusherColl getPusher(Coll<?> coll)
+	{
+		try
+		{
+			return new PusherCollFlatfile(coll);
+		}
+		catch (IOException e)
+		{
+			throw new RuntimeException("Failed to create a flatfile system pusher.", e);
+		}
 	}
 	
 	// -------------------------------------------- //
@@ -238,5 +291,5 @@ public class DriverFlatfile extends DriverAbstract
 		File idFile = new File(collDir, id + DOTJSON);
 		return idFile;
 	}
-	
+
 }

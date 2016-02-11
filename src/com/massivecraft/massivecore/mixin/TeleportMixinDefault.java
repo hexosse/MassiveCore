@@ -5,6 +5,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
+import com.massivecraft.massivecore.engine.EngineMassiveCoreTeleportMixinCause;
 import com.massivecraft.massivecore.event.EventMassiveCorePlayerPSTeleport;
 import com.massivecraft.massivecore.ps.PS;
 import com.massivecraft.massivecore.teleport.Destination;
@@ -49,9 +50,9 @@ public class TeleportMixinDefault extends TeleportMixinAbstract
 		if (vehicle != null) vehicle.eject();
 		
 		// Do the teleport
-		EngineTeleportMixinCause.get().setMixinCausedTeleportIncoming(true);
+		EngineMassiveCoreTeleportMixinCause.get().setMixinCausedTeleportIncoming(true);
 		player.teleport(location);
-		EngineTeleportMixinCause.get().setMixinCausedTeleportIncoming(false);
+		EngineMassiveCoreTeleportMixinCause.get().setMixinCausedTeleportIncoming(false);
 		
 		// Bukkit velocity
 		Vector velocity = null;
@@ -90,7 +91,7 @@ public class TeleportMixinDefault extends TeleportMixinAbstract
 		if (delaySeconds > 0)
 		{
 			// With delay
-			if (desc != null)
+			if (desc != null && ! desc.isEmpty())
 			{
 				Mixin.msgOne(teleporteeId, "<i>Teleporting to <h>"+desc+" <i>in <h>"+delaySeconds+"s <i>unless you move.");
 			}
@@ -112,7 +113,7 @@ public class TeleportMixinDefault extends TeleportMixinAbstract
 			destination = event.getDestination();
 			desc = destination.getDesc(teleporteeId);
 			
-			if (desc != null)
+			if (desc != null && ! desc.isEmpty())
 			{
 				Mixin.msgOne(teleporteeId, "<i>Teleporting to <h>"+desc+"<i>.");
 			}

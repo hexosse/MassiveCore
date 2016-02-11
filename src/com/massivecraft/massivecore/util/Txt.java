@@ -16,9 +16,16 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
-import com.massivecraft.massivecore.Predictate;
-import com.massivecraft.massivecore.PredictateStartsWithIgnoreCase;
+import com.massivecraft.massivecore.collections.MassiveList;
+import com.massivecraft.massivecore.command.MassiveCommand;
+import com.massivecraft.massivecore.mson.Mson;
+import com.massivecraft.massivecore.predicate.Predicate;
+import com.massivecraft.massivecore.predicate.PredicateStartsWithIgnoreCase;
+
+import static com.massivecraft.massivecore.mson.Mson.mson;
 
 public class Txt
 {
@@ -32,7 +39,8 @@ public class Txt
 	public static final Map<String, String> parseReplacements;
 	public static final Pattern parsePattern;
 	
-	public static final Pattern REGEX_WHITESPACE = Pattern.compile("\\s+");
+	public static final Pattern PATTERN_WHITESPACE = Pattern.compile("\\s+");
+	public static final Pattern PATTERN_NEWLINE = Pattern.compile("\\r?\\n");
 	
 	public static final long millisPerSecond = 1000;
 	public static final long millisPerMinute = 60 * millisPerSecond;
@@ -190,7 +198,7 @@ public class Txt
 	
 	public static ArrayList<String> wrap(final String string)
 	{
-		return new ArrayList<String>(Arrays.asList(string.split("\\r?\\n")));
+		return new ArrayList<String>(Arrays.asList(PATTERN_NEWLINE.split(string)));
 	}
 	
 	public static ArrayList<String> wrap(final Collection<String> strings)
@@ -225,7 +233,13 @@ public class Txt
 	{
 		if (string == null) return null;
 		if (string.length() == 0) return string;
-		return string.substring(0, 1).toUpperCase()+string.substring(1);
+		return string.substring(0, 1).toUpperCase() + string.substring(1);
+	}
+	public static String lowerCaseFirst(String string)
+	{
+		if (string == null) return null;
+		if (string.length() == 0) return string;
+		return string.substring(0, 1).toLowerCase() + string.substring(1);
 	}
 	
 	public static String repeat(String string, int times)
@@ -392,24 +406,56 @@ public class Txt
 	// Material name tools
 	// -------------------------------------------- //
 	
+	protected static Pattern PATTERN_ENUM_SPLIT = Pattern.compile("[\\s_]+");
 	public static String getNicedEnumString(String str)
 	{
 		List<String> parts = new ArrayList<String>();  
-		for (String part : str.toLowerCase().split("[\\s_]+"))
+		for (String part : PATTERN_ENUM_SPLIT.split(str.toLowerCase()))
 		{
 			parts.add(upperCaseFirst(part));
 		}
-		return implode(parts, " ");
+		return implode(parts, "");
 	}
 	
-	public static String getNicedEnum(Object enumObject)
+	public static <T extends Enum<T>> String getNicedEnum(T enumObject)
 	{
-		return getNicedEnumString(enumObject.toString());
+		return getNicedEnumString(enumObject.name());
 	}
 	
 	public static String getMaterialName(Material material)
 	{
 		return getNicedEnum(material);
+	}
+	
+	public static String getItemName(ItemStack itemStack)
+	{
+		if (InventoryUtil.isNothing(itemStack)) return Txt.parse("<silver><em>Nothing");
+		
+		ChatColor color = (itemStack.getEnchantments().size() > 0) ? ChatColor.AQUA : ChatColor.RESET;
+		
+		if (itemStack.hasItemMeta())
+		{
+			ItemMeta itemMeta = itemStack.getItemMeta();
+			if (itemMeta.hasDisplayName())
+			{
+				return color.toString() + ChatColor.ITALIC.toString() + itemMeta.getDisplayName();
+			}
+		}
+		
+		return color + Txt.getMaterialName(itemStack.getType());
+	}
+	
+	public static Mson createItemMson(ItemStack item)
+	{
+		String name = Txt.getItemName(item);
+		String colors = Txt.getStartColors(name);
+		name = colors + "[" + ChatColor.stripColor(name) + "]";
+		
+		Mson ret = Mson.fromParsedMessage(name);
+		
+		if (InventoryUtil.isSomething(item)) ret = ret.item(item);
+		
+		return ret;
 	}
 	
 	// -------------------------------------------- //
@@ -432,45 +478,195 @@ public class Txt
 			return parse("<a>")+center;
 	}
 	
-	public static ArrayList<String> getPage(List<String> lines, int pageHumanBased, String title)
+	public static Mson getMessageEmpty()
 	{
-		return getPage(lines, pageHumanBased, title, PAGEHEIGHT_PLAYER);
+		return mson("Sorry, no pages available.").color(ChatColor.YELLOW);
 	}
 	
-	public static ArrayList<String> getPage(List<String> lines, int pageHumanBased, String title, CommandSender sender)
+	public static Mson getMessageInvalid(int size)
 	{
-		return getPage(lines, pageHumanBased, title, (sender instanceof Player) ? Txt.PAGEHEIGHT_PLAYER : Txt.PAGEHEIGHT_CONSOLE);
+		if (size == 0)
+		{
+			return getMessageEmpty();
+		}
+		else if (size == 1)
+		{
+			return mson("Invalid, there is only one page.").color(ChatColor.RED);
+		}
+		else
+		{
+			return Mson.format("Invalid, page must be between 1 and %d.", size).color(ChatColor.RED);
+		}
 	}
 	
-	public static ArrayList<String> getPage(List<String> lines, int pageHumanBased, String title, int pageheight)
+	public static Mson titleizeMson(String str, int pagecount, int pageHumanBased, MassiveCommand command, List<String> args)
 	{
-		ArrayList<String> ret = new ArrayList<String>();
+		if (command == null) return mson(titleize(str + parse("<a>") + " " + pageHumanBased + "/" + pagecount));
+		
+		// Math
+		String title = str + " " + "[<]" + pageHumanBased + "/" + pagecount + "[>]";
+		String center = ".[ " + title + " ].";
+		int centerlen = center.length();
+		int pivot = titleizeLine.length() / 2;
+		int eatLeft = (centerlen / 2) - titleizeBalance;
+		int eatRight = (centerlen - eatLeft) + titleizeBalance;
+
+		// Mson
+		Mson centerMson = mson(
+			mson(".[ ").color(ChatColor.GOLD),
+			mson(str + " ").color(ChatColor.DARK_GREEN),
+			getFlipSection(pagecount, pageHumanBased, args, command),
+			mson(" ].").color(ChatColor.GOLD)
+		);
+
+		if (eatLeft < pivot)
+		{
+			Mson ret = mson(
+				mson(titleizeLine.substring(0, pivot - eatLeft)).color(ChatColor.GOLD),
+				centerMson,
+				mson(titleizeLine.substring(pivot + eatRight)).color(ChatColor.GOLD)
+			);
+
+			return ret;
+		}
+		else
+		{
+			return centerMson;
+		}
+	}
+	
+	public static List<Mson> getPage(List<?> lines, int pageHumanBased, String title)
+	{
+		return getPage(lines, pageHumanBased, title, null, null, null);
+	}
+	
+	public static List<Mson> getPage(List<?> lines, int pageHumanBased, String title, CommandSender sender)
+	{
+		return getPage(lines, pageHumanBased, title, sender, null, null);
+	}
+	
+	public static List<Mson> getPage(List<?> lines, int pageHumanBased, String title, MassiveCommand command)
+	{
+		return getPage(lines, pageHumanBased, title, command, command.getArgs());
+	}
+	
+	public static List<Mson> getPage(List<?> lines, int pageHumanBased, String title, MassiveCommand command, List<String> args)
+	{
+		return getPage(lines, pageHumanBased, title, command.sender, command, args);
+	}
+	
+	public static List<Mson> getPage(List<?> lines, int pageHumanBased, String title, CommandSender sender, MassiveCommand command, List<String> args)
+	{
+		return getPage(lines, pageHumanBased, title, (sender == null || sender instanceof Player) ? Txt.PAGEHEIGHT_PLAYER : Txt.PAGEHEIGHT_CONSOLE, command, args);
+	}
+	
+	@SuppressWarnings("unchecked")
+	public static List<Mson> getPage(List<?> lines, int pageHumanBased, String title, int pageheight, MassiveCommand command, List<String> args)
+	{
+		// Create Ret
+		List<Mson> ret = new ArrayList<Mson>();
 		int pageZeroBased = pageHumanBased - 1;
 		int pagecount = (int)Math.ceil(((double)lines.size()) / pageheight);
 		
-		ret.add(titleize(title+parse("<a>")+" "+pageHumanBased+"/"+pagecount));
+		// Add Title
+		Mson msonTitle = Txt.titleizeMson(title, pagecount, pageHumanBased, command, args);
+		ret.add(msonTitle);
 		
+		// Check empty and invalid
 		if (pagecount == 0)
 		{
-			ret.add(parse("<i>Sorry. No Pages available."));
+			ret.add(getMessageEmpty());
 			return ret;
 		}
 		else if (pageZeroBased < 0 || pageHumanBased > pagecount)
 		{
-			ret.add(parse("<i>Invalid page. Must be between 1 and "+pagecount));
+			ret.add(getMessageInvalid(pagecount));
 			return ret;
 		}
 		
+		// Get Lines
 		int from = pageZeroBased * pageheight;
-		int to = from+pageheight;
+		int to = from + pageheight;
 		if (to > lines.size())
 		{
 			to = lines.size();
 		}
 		
-		ret.addAll(lines.subList(from, to));
+		// Check object type and add lines
+		Object first = lines.get(0);
 		
+		if (first instanceof String)
+		{
+			for (String line : (List<String>) lines.subList(from, to))
+			{
+				ret.add(Mson.fromParsedMessage(line));
+			}
+		}
+		else if (first instanceof Mson)
+		{
+			ret.addAll((List<Mson>) lines.subList(from, to));
+		}
+		else
+		{
+			throw new IllegalArgumentException("The lines must be either String or Mson.");
+		}
+		
+		// Return Ret
 		return ret;
+	}
+	
+	private static Mson getFlipSection(int pagecount, int pageHumanBased, List<String> args, MassiveCommand command)
+	{
+		// Construct Mson
+		Mson start = mson(String.valueOf(pageHumanBased)).color(ChatColor.GOLD);
+		Mson backward = mson("[<] ").color(ChatColor.GRAY);
+		Mson forward = mson(" [>]").color(ChatColor.GRAY);
+		Mson end = mson(String.valueOf(pagecount)).color(ChatColor.GOLD);
+
+		// Set flip page backward commands
+		if (pageHumanBased > 1)
+		{
+			start = setFlipPageCommand(start, pageHumanBased, 1, args, command);
+			backward = setFlipPageCommand(backward, pageHumanBased, pageHumanBased - 1, args, command).color(ChatColor.AQUA);
+		}
+
+		// Set flip page forward commands
+		if (pagecount > pageHumanBased)
+		{
+			forward = setFlipPageCommand(forward, pageHumanBased, pageHumanBased + 1, args, command).color(ChatColor.AQUA);
+			end = setFlipPageCommand(end, pageHumanBased, pagecount, args, command);
+		}
+		
+		Mson flipMson = mson(
+			backward,
+			start,
+			mson("/").color(ChatColor.GOLD),
+			end,
+			forward
+		);
+		
+		return flipMson;
+	}
+	
+	private static Mson setFlipPageCommand(Mson mson, int pageHumanBased, int destinationPage, List<String> args, MassiveCommand command)
+	{
+		String number = String.valueOf(destinationPage);
+		String oldNumber = String.valueOf(pageHumanBased);
+		String commandLine;
+
+		if (args != null && args.contains(oldNumber))
+		{
+			List<String> arguments = new ArrayList<String>(args);
+			arguments.set(arguments.indexOf(oldNumber), number);
+
+			commandLine = command.getCommandLine(arguments);
+		}
+		else
+		{
+			commandLine = command.getCommandLine(number);
+		}
+
+		return mson.command(commandLine);
 	}
 	
 	// -------------------------------------------- //
@@ -509,6 +705,15 @@ public class Txt
 		}
 		
 		return ret;
+	}
+	
+	// -------------------------------------------- //
+	// FORMATTING CANDY
+	// -------------------------------------------- //
+	
+	public static String parenthesize(String string)
+	{
+		return Txt.parse("<silver>(%s<silver>)", string);
 	}
 	
 	// -------------------------------------------- //
@@ -582,27 +787,30 @@ public class Txt
 	// FILTER
 	// -------------------------------------------- //
 	
-	public static <T> List<T> getFiltered(Collection<T> elements, Predictate<T> predictate)
+	public static <T> List<T> getFiltered(Iterable<T> elements, Predicate<T> predicate)
 	{
+		// Create Ret
 		List<T> ret = new ArrayList<T>();
 		
+		// Fill Ret
 		for (T element : elements)
 		{
-			if ( ! predictate.apply(element)) continue;
+			if ( ! predicate.apply(element)) continue;
 			ret.add(element);
 		}
 		
+		// Return Ret
 		return ret;
 	}
 	
-	public static <T> List<T> getFiltered(T[] elements, Predictate<T> predictate)
+	public static <T> List<T> getFiltered(T[] elements, Predicate<T> predicate)
 	{
-		return getFiltered(Arrays.asList(elements), predictate);
+		return getFiltered(Arrays.asList(elements), predicate);
 	}
 	
-	public static List<String> getStartsWithIgnoreCase(Collection<String> elements, String prefix)
+	public static List<String> getStartsWithIgnoreCase(Iterable<String> elements, String prefix)
 	{
-		return getFiltered(elements, PredictateStartsWithIgnoreCase.get(prefix));
+		return getFiltered(elements, PredicateStartsWithIgnoreCase.get(prefix));
 	}
 	
 	public static List<String> getStartsWithIgnoreCase(String[] elements, String prefix)
@@ -668,4 +876,45 @@ public class Txt
 		
 		return ret;
 	}
+	
+	// -------------------------------------------- //
+	// PREPONDFIX
+	// -------------------------------------------- //
+	// This weird algorithm takes:
+	// - A prefix
+	// - A centerpiece single string or a list of strings.
+	// - A suffix
+	// If the centerpiece is a single String it just concatenates prefix + centerpiece + suffix.
+	// If the centerpiece is multiple Strings it concatenates prefix + suffix and then appends the centerpice at the end.
+	// This algorithm is used in the editor system.
+	
+	public static List<String> prepondfix(String prefix, List<String> strings, String suffix)
+	{
+		// Create
+		List<String> ret = new MassiveList<String>();
+		
+		// Fill
+		List<String> parts = new MassiveList<String>();
+		if (prefix != null) parts.add(prefix);
+		if (strings.size() == 1) parts.add(strings.get(0));
+		if (suffix != null) parts.add(suffix);
+		
+		ret.add(Txt.implode(parts, " "));
+		
+		if (strings.size() != 1)
+		{
+			ret.addAll(strings);
+		}
+		
+		// Return
+		return ret;
+	}
+	
+	public static String prepondfix(String prefix, String string, String suffix)
+	{
+		List<String> strings = Arrays.asList(PATTERN_NEWLINE.split(string));
+		List<String> ret = prepondfix(prefix, strings, suffix);
+		return implode(ret, "\n");
+	}
+	
 }

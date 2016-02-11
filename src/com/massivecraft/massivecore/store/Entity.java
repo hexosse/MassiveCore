@@ -1,8 +1,11 @@
 package com.massivecraft.massivecore.store;
 
+import java.util.Objects;
+
 import com.massivecraft.massivecore.MassiveCore;
 import com.massivecraft.massivecore.store.accessor.Accessor;
 import com.massivecraft.massivecore.xlib.gson.Gson;
+import com.massivecraft.massivecore.xlib.gson.JsonObject;
 
 /**
  * Usage of this class is highly optional. You may persist anything. If you are 
@@ -12,10 +15,10 @@ import com.massivecraft.massivecore.xlib.gson.Gson;
 
 // Self referencing generic.
 // http://www.angelikalanger.com/GenericsFAQ/FAQSections/ProgrammingIdioms.html#FAQ206
-public abstract class Entity<E extends Entity<E>>
+public class Entity<E extends Entity<E>>
 {
 	// -------------------------------------------- //
-	// COLL & ID
+	// FIELDS
 	// -------------------------------------------- //
 	
 	protected transient Coll<E> coll;
@@ -34,6 +37,25 @@ public abstract class Entity<E extends Entity<E>>
 		return coll.getUniverse();
 	}
 	
+	private volatile transient JsonObject lastRaw = null;
+	public JsonObject getLastRaw() { return this.lastRaw; }
+	public void setLastRaw(JsonObject lastRaw) { this.lastRaw = lastRaw; }
+	
+	private volatile transient long lastMtime = 0;
+	public long getLastMtime() { return this.lastMtime; }
+	public void setLastMtime(long lastMtime) { this.lastMtime = lastMtime; }
+	
+	private volatile transient boolean lastDefault = false;
+	public boolean getLastDefault() { return this.lastDefault; }
+	public void setLastDefault(boolean lastDefault) { this.lastDefault = lastDefault; }
+	
+	public void clearSyncLogFields()
+	{
+		this.lastRaw = null;
+		this.lastMtime = 0;
+		this.lastDefault = false;
+	}
+	
 	// -------------------------------------------- //
 	// ATTACH AND DETACH
 	// -------------------------------------------- //
@@ -50,7 +72,7 @@ public abstract class Entity<E extends Entity<E>>
 		Coll<E> coll = this.getColl();
 		if (coll == null) return (E)this;
 		
-		return coll.detachEntity(this);
+		return coll.detachEntity((E) this);
 	}
 	
 	public boolean attached()
@@ -105,35 +127,31 @@ public abstract class Entity<E extends Entity<E>>
 	{
 		if ( ! this.isLive()) return;
 		
+		//System.out.println(this.getColl().getName() + ": " +this.getId() + " was modified locally");
+		
 		// UNKNOWN is very unimportant really.
 		// LOCAL_ATTACH is for example much more important and should not be replaced.
-		if ( ! coll.identifiedModifications.containsKey(id))
-		{
-			coll.identifiedModifications.put(id, Modification.UNKNOWN);
-		}
+		this.getColl().putIdentifiedModificationFixed(this.getId(), Modification.UNKNOWN);
 	}
 	
 	public Modification sync()
 	{
-		String id = this.getId();
-		if (id == null) return Modification.UNKNOWN;
-		return this.getColl().syncId(id);
+		if ( ! this.isLive()) return Modification.UNKNOWN;
+		return this.getColl().syncIdFixed(id);
 	}
 	
 	public void saveToRemote()
 	{
-		String id = this.getId();
-		if (id == null) return;
+		if ( ! this.isLive()) return;
 		
-		this.getColl().saveToRemote(id);
+		this.getColl().saveToRemoteFixed(id);
 	}
 	
 	public void loadFromRemote()
 	{
-		String id = this.getId();
-		if (id == null) return;
+		if ( ! this.isLive()) return;
 		
-		this.getColl().loadFromRemote(id, null);
+		this.getColl().loadFromRemoteFixed(id, null);
 	}
 	
 	// -------------------------------------------- //
@@ -150,6 +168,33 @@ public abstract class Entity<E extends Entity<E>>
 	public boolean isDefault()
 	{
 		return false;
+	}
+	
+	// -------------------------------------------- //
+	// CONVENIENCE: DATABASE
+	// -------------------------------------------- //
+
+	// GENERIC
+	public <T> T convertGet(T value, T defaultValue)
+	{
+		return value != null ? value : defaultValue;
+	}
+	
+	public <T> T convertSet(T value, T defaultValue)
+	{
+		this.changed();
+		return Objects.equals(value, defaultValue) ? null : value;
+	}
+	
+	// BOOLEAN
+	public boolean convertGet(Boolean value)
+	{
+		return convertGet(value, false);
+	}
+	
+	public Boolean convertSet(Boolean value)
+	{
+		return convertSet(value, false);
 	}
 	
 	// -------------------------------------------- //

@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
 import org.bukkit.command.CommandSender;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -12,10 +13,12 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.permissions.Permissible;
 
-import com.massivecraft.massivecore.Predictate;
 import com.massivecraft.massivecore.event.EventMassiveCorePlayerLeave;
 import com.massivecraft.massivecore.mson.Mson;
+import com.massivecraft.massivecore.predicate.Predicate;
 import com.massivecraft.massivecore.ps.PS;
+import com.massivecraft.massivecore.store.Coll;
+import com.massivecraft.massivecore.store.Entity;
 import com.massivecraft.massivecore.teleport.Destination;
 
 public class Mixin
@@ -39,6 +42,10 @@ public class Mixin
 	private static SenderPsMixin senderPsMixin = SenderPsMixinDefault.get();
 	public static SenderPsMixin getSenderPsMixin() { return senderPsMixin; }
 	public static void setSenderPsMixin(SenderPsMixin val) { senderPsMixin = val; }
+
+	private static GamemodeMixin gamemodeMixin = GamemodeMixinDefault.get();
+	public static GamemodeMixin getGamemodeMixin() { return gamemodeMixin; }
+	public static void setGamemodeMixin(GamemodeMixin val) { gamemodeMixin = val; }
 	
 	private static PlayedMixin playedMixin = PlayedMixinDefault.get();
 	public static PlayedMixin getPlayedMixin() { return playedMixin; }
@@ -55,6 +62,10 @@ public class Mixin
 	private static MessageMixin messageMixin = MessageMixinDefault.get();
 	public static MessageMixin getMessageMixin() { return messageMixin; }
 	public static void setMessageMixin(MessageMixin val) { messageMixin = val; }
+
+	private static ActionbarMixin actionbarMixin = ActionbarMixinDefault.get();
+	public static ActionbarMixin getActionbarMixin() { return actionbarMixin; }
+	public static void setActionbarMixin(ActionbarMixin val) { actionbarMixin = val; }
 	
 	private static TitleMixin titleMixin = TitleMixinDefault.get();
 	public static TitleMixin getTitleMixin() { return titleMixin; }
@@ -71,6 +82,10 @@ public class Mixin
 	private static CommandMixin commandMixin = CommandMixinDefault.get();
 	public static CommandMixin getCommandMixin() { return commandMixin; }
 	public static void setCommandMixin(CommandMixin val) { commandMixin = val; }
+	
+	private static ModificationMixin modificationMixin = ModificationMixinDefault.get();
+	public static ModificationMixin getModificationMixin() { return modificationMixin; }
+	public static void setModificationMixin(ModificationMixin val) { modificationMixin = val; }
 	
 	// -------------------------------------------- //
 	// STATIC EXPOSE: WORLD
@@ -175,6 +190,20 @@ public class Mixin
 	}
 	
 	// -------------------------------------------- //
+	// STATIC EXPOSE: GAMEMODE
+	// -------------------------------------------- //
+	
+	public static GameMode getGamemode(Object playerObject)
+	{
+		return getGamemodeMixin().getGamemode(playerObject);
+	}
+	
+	public static void setGamemode(Object playerObject, GameMode gm)
+	{
+		getGamemodeMixin().setGamemode(playerObject, gm);
+	}
+	
+	// -------------------------------------------- //
 	// STATIC EXPOSE: PLAYED
 	// -------------------------------------------- //
 	
@@ -198,14 +227,22 @@ public class Mixin
 	{
 		return getPlayedMixin().hasPlayedBefore(senderObject);
 	}
+	public static String getIp(Object senderObject)
+	{
+		return getPlayedMixin().getIp(senderObject);
+	}
 	
 	// -------------------------------------------- //
 	// STATIC EXPOSE: VISIBILITY
 	// -------------------------------------------- //
 	
-	public static boolean canSee(Object watcherObject, Object watcheeObject)
+	public static boolean isVisible(Object watcheeObject)
 	{
-		return getVisibilityMixin().canSee(watcherObject, watcheeObject);
+		return getVisibilityMixin().isVisible(watcheeObject);
+	}
+	public static boolean isVisible(Object watcheeObject, Object watcherObject)
+	{
+		return getVisibilityMixin().isVisible(watcheeObject, watcherObject);
 	}
 	
 	// -------------------------------------------- //
@@ -234,130 +271,128 @@ public class Mixin
 	// STATIC EXPOSE: MESSAGE
 	// -------------------------------------------- //
 	
-	// All
-	public static boolean messageAll(String message)
-	{
-		return getMessageMixin().messageAll(message);
-	}
-	public static boolean messageAll(String... messages)
-	{
-		return getMessageMixin().messageAll(messages);
-	}
-	public static boolean messageAll(Collection<String> messages)
-	{
-		return getMessageMixin().messageAll(messages);
-	}
-	
-	// Predictate
-	public static boolean messagePredictate(Predictate<CommandSender> predictate, String message)
-	{
-		return getMessageMixin().messagePredictate(predictate, message);
-	}
-	public static boolean messagePredictate(Predictate<CommandSender> predictate, String... messages)
-	{
-		return getMessageMixin().messagePredictate(predictate, messages);
-	}
-	public static boolean messagePredictate(Predictate<CommandSender> predictate, Collection<String> messages)
-	{
-		return getMessageMixin().messagePredictate(predictate, messages);
-	}
-	
-	// One
-	public static boolean messageOne(Object senderObject, String message)
-	{
-		return getMessageMixin().messageOne(senderObject, message);
-	}
-	public static boolean messageOne(Object senderObject, String... messages)
-	{
-		return getMessageMixin().messageOne(senderObject, messages);
-	}
-	public static boolean messageOne(Object senderObject, Collection<String> messages)
-	{
-		return getMessageMixin().messageOne(senderObject, messages);
-	}
-	
-	// All
+	// MSG: All
 	public static boolean msgAll(String msg)
 	{
 		return getMessageMixin().msgAll(msg);
 	}
+	
 	public static boolean msgAll(String msg, Object... args)
 	{
 		return getMessageMixin().msgAll(msg, args);
 	}
+	
 	public static boolean msgAll(Collection<String> msgs)
 	{
 		return getMessageMixin().msgAll(msgs);
 	}
-	
-	// Predictate
-	public static boolean msgPredictate(Predictate<CommandSender> predictate, String msg)
+
+	// MSG: Predicate
+	public static boolean msgPredicate(Predicate<CommandSender> predicate, String msg)
 	{
-		return getMessageMixin().msgPredictate(predictate, msg);
-	}
-	public static boolean msgPredictate(Predictate<CommandSender> predictate, String msg, Object... args)
-	{
-		return getMessageMixin().msgPredictate(predictate, msg, args);
-	}
-	public static boolean msgPredictate(Predictate<CommandSender> predictate, Collection<String> msgs)
-	{
-		return getMessageMixin().msgPredictate(predictate, msgs);
+		return getMessageMixin().msgPredicate(predicate, msg);
 	}
 	
-	// One
-	public static boolean msgOne(Object senderObject, String msg)
+	public static boolean msgPredicate(Predicate<CommandSender> predicate, String msg, Object... args)
 	{
-		return getMessageMixin().msgOne(senderObject, msg);
-	}
-	public static boolean msgOne(Object senderObject, String msg, Object... args)
-	{
-		return getMessageMixin().msgOne(senderObject, msg, args);
-	}
-	public static boolean msgOne(Object senderObject, Collection<String> msgs)
-	{
-		return getMessageMixin().msgOne(senderObject, msgs);
+		return getMessageMixin().msgPredicate(predicate, msg, args);
 	}
 	
-	// RAW All
-	public static boolean messageRawAll(Mson mson)
+	public static boolean msgPredicate(Predicate<CommandSender> predicate, Collection<String> msgs)
 	{
-		return getMessageMixin().messageRawAll(mson);
+		return getMessageMixin().msgPredicate(predicate, msgs);
 	}
-	public static boolean messageRawAll(Mson... msons)
+
+	// MSG: One
+	public static boolean msgOne(Object sendeeObject, String msg)
 	{
-		return getMessageMixin().messageRawAll(msons);
-	}
-	public static boolean messageRawAll(Collection<Mson> msons)
-	{
-		return getMessageMixin().messageRawAll(msons);
+		return getMessageMixin().msgOne(sendeeObject, msg);
 	}
 	
-	// RAW Predictate
-	public static boolean messageRawPredictate(Predictate<CommandSender> predictate, Mson mson)
+	public static boolean msgOne(Object sendeeObject, String msg, Object... args)
 	{
-		return getMessageMixin().messageRawPredictate(predictate, mson);
-	}
-	public static boolean messageRawPredictate(Predictate<CommandSender> predictate, Mson... msons)
-	{
-		return getMessageMixin().messageRawPredictate(predictate, msons);
-	}
-	public static boolean messageRawPredictate(Predictate<CommandSender> predictate, Collection<Mson> msons)
-	{
-		return getMessageMixin().messageRawPredictate(predictate, msons);
+		return getMessageMixin().msgOne(sendeeObject, msg, args);
 	}
 	
-	// RAW One
-	public static boolean messageRawOne(Object senderObject, Mson mson)
+	public static boolean msgOne(Object sendeeObject, Collection<String> msgs)
 	{
-		return getMessageMixin().messageRawOne(senderObject, mson);
+		return getMessageMixin().msgOne(sendeeObject, msgs);
 	}
-	public static boolean messageRawOne(Object senderObject, Mson... msons)
+
+	// MESSAGE: All
+	public static boolean messageAll(Object message)
 	{
-		return getMessageMixin().messageRawOne(senderObject, msons);
+		return getMessageMixin().messageAll(message);
 	}
-	public static boolean messageRawOne(Object senderObject, Collection<Mson> msons)
+	
+	public static boolean messageAll(Object... messages)
 	{
-		return getMessageMixin().messageRawOne(senderObject, msons);
+		return getMessageMixin().messageAll(messages);
+	}
+	
+	public static boolean messageAll(Collection<?> messages)
+	{
+		return getMessageMixin().messageAll(messages);
+	}
+
+	// MESSAGE: Predicate
+	public static boolean messagePredicate(Predicate<CommandSender> predicate, Object message)
+	{
+		return getMessageMixin().messagePredicate(predicate, message);
+	}
+	
+	public static boolean messagePredicate(Predicate<CommandSender> predicate, Object... messages)
+	{
+		return getMessageMixin().messagePredicate(predicate, messages);
+	}
+	
+	public static boolean messagePredicate(Predicate<CommandSender> predicate, Collection<?> messages)
+	{
+		return getMessageMixin().messagePredicate(predicate, messages);
+	}
+
+	// MESSAGE: One
+	public static boolean messageOne(Object sendeeObject, Object message)
+	{
+		return getMessageMixin().messageOne(sendeeObject, message);
+	}
+	
+	public static boolean messageOne(Object sendeeObject, Object... messages)
+	{
+		return getMessageMixin().messageOne(sendeeObject, messages);
+	}
+	
+	public static boolean messageOne(Object sendeeObject, Collection<?> messages)
+	{
+		return getMessageMixin().messageOne(sendeeObject, messages);
+	}
+
+	// -------------------------------------------- //
+	// STATIC EXPOSE: ACTIONBAR
+	// -------------------------------------------- //
+
+	// Default
+	public static boolean sendActionbarMessage(Object sendeeObject, String message)
+	{
+		return getActionbarMixin().sendActionbarMessage(sendeeObject, message);
+	}
+
+	// Parsed
+	public static boolean sendActionbarMsg(Object sendeeObject, String message)
+	{
+		return getActionbarMixin().sendActionbarMsg(sendeeObject, message);
+	}
+
+	// Mson
+	public static boolean sendActionbarMson(Object sendeeObject, Mson mson)
+	{
+		return getActionbarMixin().sendActionbarMson(sendeeObject, mson);
+	}
+
+	// Available
+	public static boolean isActionbarAvailable()
+	{
+		return getActionbarMixin().isActionbarAvailable();
 	}
 	
 	// -------------------------------------------- //
@@ -422,6 +457,20 @@ public class Mixin
 	public static boolean dispatchCommand(Object presentObject, Object senderObject, String commandLine)
 	{
 		return getCommandMixin().dispatchCommand(presentObject, senderObject, commandLine);
+	}
+	
+	// -------------------------------------------- //
+	// STATIC EXPOSE: MODIFCATION
+	// -------------------------------------------- //
+	
+	public static void syncModification(Entity<?> entity)
+	{
+		getModificationMixin().syncModification(entity);
+	}
+	
+	public static void syncModification(Coll<?> coll, String id)
+	{
+		getModificationMixin().syncModification(coll, id);
 	}
 
 }

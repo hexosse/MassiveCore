@@ -2,8 +2,9 @@ package com.massivecraft.massivecore.util;
 
 import java.security.InvalidParameterException;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -12,6 +13,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 
@@ -121,10 +123,10 @@ public class SignUtil
 		if (lenientTitle == null) return false;
 		
 		// ... of the type we seek ...
-		if (!title.equalsIgnoreCase(lenientTitle)) return false;
+		if ( ! title.equalsIgnoreCase(lenientTitle)) return false;
 		
 		// ... verify that the player has permission to create that type of sign ...
-		if (!PermUtil.has(player, permissionNode, true))
+		if ( ! PermUtil.has(player, permissionNode, true))
 		{
 			event.setCancelled(true);
 			return false;
@@ -201,17 +203,35 @@ public class SignUtil
 		return lines;
 	}
 	
+	protected final static Set<Action> VALID_INTERACT_ACTIONS = EnumSet.of(
+		// Action.LEFT_CLICK_BLOCK, // We must allow breaking the sign. 
+		Action.RIGHT_CLICK_BLOCK
+	);
 	public static List<String> getSpecialPillarLines(PlayerInteractEvent event, String title)
 	{
+		// Arguments
 		if (event == null) throw new NullPointerException("event");
 		if (title == null) throw new NullPointerException("title");
 		
+		// Player
+		final Player player = event.getPlayer();
+		if (MUtil.isntPlayer(player)) return null;
+		
+		// Action
+		if ( ! VALID_INTERACT_ACTIONS.contains(event.getAction())) return null;
+		
+		// Block
 		Block block = event.getClickedBlock();
 		if (block == null) return null;
 		
+		// Lines
 		List<String> lines = getSpecialPillarLines(block, title);
 		if (lines == null) return null;
 		
+		// Cancel
+		event.setCancelled(true);
+		
+		// Return
 		return lines;
 	}
 	
@@ -244,7 +264,7 @@ public class SignUtil
 	public static Sign getSign(Block block)
 	{
 		BlockState blockState = block.getState();
-		if (!(blockState instanceof Sign)) return null;
+		if ( ! (blockState instanceof Sign)) return null;
 		return (Sign)blockState;
 	}
 	
@@ -284,8 +304,19 @@ public class SignUtil
 	{
 		if (sign == null) throw new NullPointerException("sign");
 		
-		return new ArrayList<String>(Arrays.asList(sign.getLines()));
+		// Create
+		List<String> ret = new ArrayList<String>();
+		
+		// Fill
+		for (String line : sign.getLines())
+		{
+			if (line == null) continue;
+			if (line.trim().isEmpty()) continue;
+			ret.add(line);
+		}
+		
+		// Return
+		return ret;
 	}
-
 	
 }

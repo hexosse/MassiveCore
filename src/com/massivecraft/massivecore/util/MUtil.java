@@ -3,6 +3,7 @@ package com.massivecraft.massivecore.util;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,6 +46,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.EntityDamageEvent.DamageModifier;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
@@ -55,13 +57,16 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.projectiles.ProjectileSource;
 
-import com.massivecraft.massivecore.CaseInsensitiveComparator;
 import com.massivecraft.massivecore.MassiveCore;
-import com.massivecraft.massivecore.MassiveCoreEngineMain;
-import com.massivecraft.massivecore.MassiveCoreEngineWorldNameSet;
 import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.collections.MassiveSet;
 import com.massivecraft.massivecore.collections.MassiveTreeSet;
+import com.massivecraft.massivecore.comparator.ComparatorCaseInsensitive;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreDatabase;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreMain;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreWorldNameSet;
+import com.massivecraft.massivecore.nms.NmsEntity;
+import com.massivecraft.massivecore.predicate.Predicate;
 import com.massivecraft.massivecore.util.extractor.Extractor;
 import com.massivecraft.massivecore.util.extractor.ExtractorPlayer;
 import com.massivecraft.massivecore.util.extractor.ExtractorPlayerName;
@@ -83,7 +88,7 @@ public class MUtil
 	{
 		methodGetOnlinePlayers = getMethodGetOnlinePlayers();
 	}
-	
+
 	// -------------------------------------------- //
 	// GET ONLINE PLAYERS
 	// -------------------------------------------- //
@@ -169,15 +174,74 @@ public class MUtil
 	}
 	
 	// -------------------------------------------- //
+	// GET ENTITY
+	// -------------------------------------------- //
+	
+	public static Entity getEntity(World world, UUID uuid)
+	{
+		if (world == null) throw new NullPointerException("world");
+		if (uuid == null) return null;
+		
+		if (NmsEntity.get().isAvailable())
+		{
+			return NmsEntity.get().getEntity(world, uuid);
+		}
+		else
+		{
+			return getEntityFallback(world, uuid);
+		}
+	}
+	
+	public static Entity getEntity(UUID uuid)
+	{
+		if (uuid == null) return null;
+		
+		if (NmsEntity.get().isAvailable())
+		{
+			return NmsEntity.get().getEntity(uuid);
+		}
+		else
+		{
+			return getEntityFallback(uuid);
+		}
+	}
+	
+	private static Entity getEntityFallback(World world, UUID uuid)
+	{
+		if (world == null) throw new NullPointerException("world");
+		if (uuid == null) return null;
+		
+		for (Entity entity : world.getEntities())
+		{
+			if (entity.getUniqueId().equals(uuid)) return entity;
+		}
+		
+		return null;
+	}
+	
+	private static Entity getEntityFallback(UUID uuid)
+	{
+		if (uuid == null) return null;
+		
+		for (World world : Bukkit.getWorlds())
+		{
+			Entity ret = getEntityFallback(world, uuid);
+			if (ret != null) return ret;
+		}
+		
+		return null;
+	}
+	
+	// -------------------------------------------- //
 	// IS VALID PLAYER NAME
 	// -------------------------------------------- //
 	
 	// The regex for a valid minecraft player name.
-	public final static Pattern playerNamePattern = Pattern.compile("^[a-zA-Z0-9_]{2,16}$");
+	public final static Pattern PATTERN_PLAYER_NAME = Pattern.compile("^[a-zA-Z0-9_]{2,16}$");
 	
 	public static boolean isValidPlayerName(String string)
 	{
-		return playerNamePattern.matcher(string).matches();
+		return PATTERN_PLAYER_NAME.matcher(string).matches();
 	}
 	
 	// -------------------------------------------- //
@@ -206,6 +270,63 @@ public class MUtil
 	public static boolean isUuid(String string)
 	{
 		return asUuid(string) != null;
+	}
+	
+	// -------------------------------------------- //
+	// IP
+	// -------------------------------------------- //
+	
+	public static String getIp(CommandSender sender)
+	{
+		if (!(sender instanceof Player)) return null;
+		Player player = (Player)sender;
+		
+		InetSocketAddress address = player.getAddress();
+		if (address != null) return getIp(address);
+		
+		String id = IdUtil.getId(player);
+		PlayerLoginEvent event = EngineMassiveCoreDatabase.idToPlayerLoginEvent.get(id);
+		if (event != null) return getIp(event);
+		
+		return null;
+	}
+	
+	public static String getIp(InetSocketAddress address)
+	{
+		if (address == null) return null;
+		
+		String ret = address.toString();
+		String[] parts = ret.split("/");
+        
+        ret = parts[1];
+        parts = ret.split(":");
+        
+        ret = parts[0];
+		return ret;
+	}
+	
+	public static String getIp(PlayerLoginEvent event)
+	{
+		InetAddress address = event.getAddress();
+		return getIp(address);
+	}
+	
+	public static String getIp(InetAddress address)
+	{
+		if (address == null) return null;
+		
+		String ret = address.toString();
+		String[] parts = ret.split("/");
+        
+        ret = parts[1];
+		return ret;
+	}
+	
+	public static Pattern PATTERN_IPV4 = Pattern.compile("^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$");
+	public static boolean isIp(String string)
+	{
+		if (string == null) return false;
+		return PATTERN_IPV4.matcher(string).matches();
 	}
 	
 	// -------------------------------------------- //
@@ -309,10 +430,28 @@ public class MUtil
 		
 		return ret;
 	}
-	
-	public static String getStackTraceString(List<StackTraceElement> stackTrace, boolean color, String glue)
+	public static List<String> getStackTraceStrings(int skip, boolean color)
 	{
-		return Txt.implode(getStackTraceStrings(stackTrace, color), glue);
+		skip++;
+		return getStackTraceStrings(getStackTrace(skip), color);
+	}
+	public static List<String> getStackTraceStrings(boolean color)
+	{
+		return getStackTraceStrings(0, color);
+	}
+	
+	public static String getStackTraceString(List<StackTraceElement> stackTrace, boolean color)
+	{
+		return Txt.implode(getStackTraceStrings(stackTrace, color), "\n");
+	}
+	public static String getStackTraceString(int skip, boolean color)
+	{
+		skip++;
+		return getStackTraceString(getStackTrace(skip), color);
+	}
+	public static String getStackTraceString(boolean color)
+	{
+		return getStackTraceString(0, color);
 	}
 	
 	// -------------------------------------------- //
@@ -612,7 +751,7 @@ public class MUtil
 		}
 		throw new IllegalArgumentException("The dye color " + dyeColor + " is not yet supported!");
 	}
-	
+
 	// -------------------------------------------- //
 	// ENTITY DAMAGE EVENT
 	// -------------------------------------------- //
@@ -688,28 +827,6 @@ public class MUtil
 	public static boolean isFinite(double d)
 	{
 		 return Math.abs(d) <= Double.MAX_VALUE;
-	}
-	
-	// -------------------------------------------- //
-	// GET IP
-	// -------------------------------------------- //
-	
-	public static String getIp(CommandSender sender)
-	{
-		if (!(sender instanceof Player)) return null;
-		Player player = (Player)sender;
-		
-		InetSocketAddress address = player.getAddress();
-		if (address == null) return null;
-		
-		String ret = address.toString();
-		String[] parts = ret.split("/");
-        
-        ret = parts[1];
-        parts = ret.split(":");
-        
-        ret = parts[0];
-		return ret;
 	}
 	
 	// -------------------------------------------- //
@@ -1140,7 +1257,7 @@ public class MUtil
 		if (MUtil.isntPlayer(player)) return null;
 		UUID uuid = player.getUniqueId();
 		
-		return MassiveCoreEngineMain.kickedPlayerReasons.get(uuid);
+		return EngineMassiveCoreMain.kickedPlayerReasons.get(uuid);
 	}
 	
 	public static boolean causedByKick(PlayerQuitEvent event)
@@ -1244,8 +1361,110 @@ public class MUtil
 	
 	public static Set<String> getLoadedWorldNames()
 	{
-		return MassiveCoreEngineWorldNameSet.get().getWorldNames();
+		return EngineMassiveCoreWorldNameSet.get().getWorldNames();
 	}
+	
+	// -------------------------------------------- //
+	// TRANSFORM
+	// -------------------------------------------- //
+	
+	public static <T> List<T> transform(Iterable<T> items, Predicate<? super T> where, Comparator<? super T> orderby, Integer limit, Integer offset)
+	{
+		// Collection
+		Collection<T> collection = null;
+		if (items instanceof Collection<?>) collection = (Collection<T>)items;
+		
+		// WHERE
+		List<T> ret;
+		if (where == null)
+		{
+			if (collection != null)
+			{
+				ret = new ArrayList<T>(collection);
+			}
+			else
+			{
+				ret = new ArrayList<T>();
+				for (T item : items)
+				{
+					ret.add(item);
+				}
+			}
+		}
+		else
+		{
+			if (collection != null)
+			{
+				ret = new ArrayList<T>(collection.size());
+			}
+			else
+			{
+				ret = new ArrayList<T>();
+			}
+			
+			for (T item : items)
+			{
+				if (where.apply(item))
+				{
+					ret.add(item);
+				}
+			}
+		}
+		
+		// ORDERBY
+		if (orderby != null)
+		{
+			Collections.sort(ret, orderby);
+		}
+		
+		// LIMIT AND OFFSET
+		// Parse args
+		int fromIndex = 0;
+		if (offset != null)
+		{
+			fromIndex = offset;
+		}
+		
+		int toIndex = ret.size()-1;
+		if (limit != null)
+		{
+			toIndex = offset+limit;
+		}
+		
+		// Clean args
+		if (fromIndex <= 0)
+		{
+			fromIndex = 0;
+		}
+		else if (fromIndex > ret.size()-1)
+		{
+			fromIndex = ret.size()-1;
+		}
+		
+		if (toIndex < fromIndex)
+		{
+			toIndex = fromIndex;
+		}
+		else if (toIndex > ret.size()-1)
+		{
+			toIndex = ret.size()-1;
+		}
+		
+		// No limit?
+		if (fromIndex == 0 && toIndex == ret.size()-1) return ret;
+		
+		return new ArrayList<T>(ret.subList(fromIndex, toIndex));
+	}
+	public static <T> List<T> transform(Iterable<T> items, Predicate<? super T> where) { return transform(items, where, null, null, null); }
+	public static <T> List<T> transform(Iterable<T> items, Predicate<? super T> where, Comparator<? super T> orderby) { return transform(items, where, orderby, null, null); }
+	public static <T> List<T> transform(Iterable<T> items, Predicate<? super T> where, Comparator<? super T> orderby, Integer limit) { return transform(items, where, orderby, limit, null); }
+	public static <T> List<T> transform(Iterable<T> items, Predicate<? super T> where, Integer limit) { return transform(items, where, null, limit, null); }
+	public static <T> List<T> transform(Iterable<T> items, Predicate<? super T> where, Integer limit, Integer offset) { return transform(items, where, null, limit, offset); }
+	public static <T> List<T> transform(Iterable<T> items, Comparator<? super T> orderby) { return transform(items, null, orderby, null, null); }
+	public static <T> List<T> transform(Iterable<T> items, Comparator<? super T> orderby, Integer limit) { return transform(items, null, orderby, limit, null); }
+	public static <T> List<T> transform(Iterable<T> items, Comparator<? super T> orderby, Integer limit, Integer offset) { return transform(items, null, orderby, limit, offset); }
+	public static <T> List<T> transform(Iterable<T> items, Integer limit) { return transform(items, null, null, limit, null); }
+	public static <T> List<T> transform(Iterable<T> items, Integer limit, Integer offset) { return transform(items, null, null, limit, offset); }
 	
 	// -------------------------------------------- //
 	// SIMPLE CONSTRUCTORS
@@ -1254,18 +1473,22 @@ public class MUtil
 	@SafeVarargs
 	public static <T> List<T> list(T... items)
 	{
-		return new MassiveList<T>(Arrays.asList(items));
+		List<T> ret = new MassiveList<T>(items.length);
+		Collections.addAll(ret, items);
+		return ret;
 	}
 	
 	@SafeVarargs
 	public static <T> Set<T> set(T... items)
 	{
-		return new MassiveSet<T>(Arrays.asList(items));
+		Set<T> ret = new MassiveSet<T>(items.length);
+		Collections.addAll(ret, items);
+		return ret;
 	}
 	
 	public static Set<String> treeset(String... items)
 	{
-		return new MassiveTreeSet<String, CaseInsensitiveComparator>(CaseInsensitiveComparator.get(), Arrays.asList(items));
+		return new MassiveTreeSet<String, ComparatorCaseInsensitive>(ComparatorCaseInsensitive.get(), Arrays.asList(items));
 	}
 	
 	@SuppressWarnings("unchecked")

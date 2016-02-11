@@ -8,7 +8,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeSet;
 
-import com.massivecraft.massivecore.cmd.arg.ARUniverse;
+import com.massivecraft.massivecore.command.type.TypeUniverse;
 import com.massivecraft.massivecore.store.Entity;
 import com.massivecraft.massivecore.util.MUtil;
 
@@ -70,12 +70,14 @@ public class Multiverse extends Entity<Multiverse>
 		{
 			ret = new HashSet<String>();
 			this.uw.put(universe, ret);
+			this.changed();
 		}
 		return ret;
 	}
 	
 	public Set<String> delUniverse(String universe)
 	{
+		this.changed();
 		return this.uw.remove(universe);
 	}
 	
@@ -113,6 +115,7 @@ public class Multiverse extends Entity<Multiverse>
 		Set<String> worlds = this.uw.get(universe);
 		if (worlds == null) return false;
 		worlds.clear();
+		this.changed();
 		return true;
 	}
 	
@@ -120,10 +123,11 @@ public class Multiverse extends Entity<Multiverse>
 	{
 		if (this.getUniverseForWorldName(worldName).equals(universe)) return false;
 		this.removeWorld(worldName);
-		if (!universe.equals(MassiveCore.DEFAULT))
+		if ( ! universe.equals(MassiveCore.DEFAULT))
 		{
 			this.newUniverse(universe).add(worldName);
 		}
+		this.changed();
 		return true;
 	}
 	
@@ -161,7 +165,11 @@ public class Multiverse extends Entity<Multiverse>
 	{
 		for (Set<String> worldNames : this.uw.values())
 		{
-			if (worldNames.remove(worldName)) return true;
+			if (worldNames.remove(worldName))
+			{
+				this.changed();
+				return true;
+			}
 		}
 		return false;
 	}
@@ -170,9 +178,9 @@ public class Multiverse extends Entity<Multiverse>
 	// ARG READERS
 	// -------------------------------------------- //
 	
-	public ARUniverse argReaderUniverse()
+	public TypeUniverse typeUniverse()
 	{
-		return new ARUniverse(this);
+		return new TypeUniverse(this);
 	}
 	
 }

@@ -3,8 +3,6 @@ package com.massivecraft.massivecore.store;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -16,16 +14,17 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import org.bukkit.plugin.Plugin;
 
 import com.massivecraft.massivecore.MassiveCore;
+import com.massivecraft.massivecore.MassiveCoreMConf;
 import com.massivecraft.massivecore.MassivePlugin;
-import com.massivecraft.massivecore.NaturalOrderComparator;
-import com.massivecraft.massivecore.Predictate;
-import com.massivecraft.massivecore.store.accessor.Accessor;
+import com.massivecraft.massivecore.collections.MassiveList;
+import com.massivecraft.massivecore.comparator.ComparatorNaturalOrder;
+import com.massivecraft.massivecore.mixin.Mixin;
 import com.massivecraft.massivecore.util.Txt;
 import com.massivecraft.massivecore.xlib.gson.Gson;
 import com.massivecraft.massivecore.xlib.gson.JsonElement;
 import com.massivecraft.massivecore.xlib.gson.JsonObject;
 
-public class Coll<E> extends CollAbstract<E>
+public class Coll<E extends Entity<E>> extends CollAbstract<E>
 {
 	// -------------------------------------------- //
 	// GLOBAL REGISTRY
@@ -34,7 +33,7 @@ public class Coll<E> extends CollAbstract<E>
 	public final static String TOTAL = "*total*"; 
 	
 	// All instances registered here are considered inited.
-	private static Map<String, Coll<?>> name2instance = new ConcurrentSkipListMap<String, Coll<?>>(NaturalOrderComparator.get());
+	private static Map<String, Coll<?>> name2instance = new ConcurrentSkipListMap<String, Coll<?>>(ComparatorNaturalOrder.get());
 	
 	private static Map<String, Coll<?>> umap = Collections.unmodifiableMap(name2instance);
 	private static Set<String> unames = Collections.unmodifiableSet(name2instance.keySet());
@@ -81,7 +80,7 @@ public class Coll<E> extends CollAbstract<E>
 	{
 		if (this.getPlugin() instanceof MassivePlugin)
 		{
-			return ((MassivePlugin)this.getPlugin()).gson;
+			return ((MassivePlugin)this.getPlugin()).getGson();
 		}
 		else
 		{
@@ -95,13 +94,53 @@ public class Coll<E> extends CollAbstract<E>
 	protected Object collDriverObject;
 	@Override public Object getCollDriverObject() { return this.collDriverObject; }
 	
+	@Override
+	public boolean supportsPusher()
+	{
+		return this.getDb().supportsPusher();
+	}
+	
+	protected PusherColl pusher;
+	
+	@Override
+	public PusherColl getPusher()
+	{
+		if (this.pusher == null) this.pusher = this.getDb().getPusher(this);
+		return this.pusher;
+	}
+	
+	@Override
+	public String getDebugName()
+	{
+		String ret = this.getPlugin().getName() + "::" + this.getBasename();
+		
+		if (this.getUniverse() != null)
+		{
+			ret += "@" + this.getUniverse();
+		}
+		
+		return ret;
+	}
+	
 	// -------------------------------------------- //
 	// STORAGE
 	// -------------------------------------------- //
 	
 	// Loaded
 	protected Map<String, E> id2entity;
-	protected Map<E, String> entity2id;
+	
+	@Override
+	public String fixId(Object oid)
+	{
+		if (oid == null) return null;
+		
+		String ret = null;
+		if (oid instanceof String) ret = (String) oid;
+		else if (oid.getClass() == this.getEntityClass()) ret = ((Entity<?>) oid).getId();
+		if (ret == null) return null;
+		
+		return this.isLowercasing() ? ret.toLowerCase() : ret;
+	}
 	
 	@Override public Map<String, E> getId2entity() { return Collections.unmodifiableMap(this.id2entity); } 
 	@Override
@@ -127,30 +166,15 @@ public class Coll<E> extends CollAbstract<E>
 		return this.id2entity.containsKey(id);
 	}
 	
-	@Override public Map<E, String> getEntity2id() { return Collections.unmodifiableMap(this.entity2id); }
-	@Override public String getId(Object entity) { return this.entity2id.get(entity); }
-	@Override public boolean containsEntity(Object entity) { return this.entity2id.containsKey(entity); };
+	@Override
+	public boolean containsEntity(Object entity)
+	{
+		return this.id2entity.containsValue(entity);
+	}
 	
 	@Override public Collection<E> getAll()
 	{
-		return Collections.unmodifiableCollection(this.entity2id.keySet());
-	}
-	@Override public List<E> getAll(Predictate<? super E> where) { return MStoreUtil.uglySQL(this.getAll(), where, null, null, null); }
-	@Override public List<E> getAll(Predictate<? super E> where, Comparator<? super E> orderby) { return MStoreUtil.uglySQL(this.getAll(), where, orderby, null, null); }
-	@Override public List<E> getAll(Predictate<? super E> where, Comparator<? super E> orderby, Integer limit) { return MStoreUtil.uglySQL(this.getAll(), where, orderby, limit, null); }
-	@Override public List<E> getAll(Predictate<? super E> where, Comparator<? super E> orderby, Integer limit, Integer offset) { return MStoreUtil.uglySQL(this.getAll(), where, orderby, limit, offset); }
-	
-	@Override
-	public String fixId(Object oid)
-	{
-		if (oid == null) return null;
-		
-		String ret = null;
-		if (oid instanceof String) ret = (String) oid;
-		else if (oid.getClass() == this.getEntityClass()) ret = this.entity2id.get(oid);
-		if (ret == null) return null;
-		
-		return this.isLowercasing() ? ret.toLowerCase() : ret;
+		return Collections.unmodifiableCollection(this.id2entity.values());
 	}
 	
 	// -------------------------------------------- //
@@ -170,58 +194,27 @@ public class Coll<E> extends CollAbstract<E>
 	
 	// Should that instance be saved or not?
 	// If it is default it should not be saved.
-	@SuppressWarnings("rawtypes")
-	@Override public boolean isDefault(E entity)
+	@Override
+	public boolean isDefault(E entity)
 	{
-		if (entity instanceof Entity)
-		{
-			return ((Entity)entity).isDefault();
-		}
-		else
-		{
-			return false;
-		}
+		return entity.isDefault();
 	}
 
 	// -------------------------------------------- //
 	// COPY AND CREATE
 	// -------------------------------------------- //
 	
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public void copy(Object ofrom, Object oto)
+	@Override
+	public void copy(E efrom, E eto)
 	{
-		if (ofrom == null) throw new NullPointerException("ofrom");
-		if (oto == null) throw new NullPointerException("oto");
-			
-		if (ofrom instanceof Entity)
-		{
-			Entity efrom = (Entity)ofrom;
-			Entity eto = (Entity)oto;
-			
-			eto.load(efrom);
-		}
-		else if (ofrom instanceof JsonObject)
-		{
-			JsonObject jfrom = (JsonObject)ofrom;
-			JsonObject jto = (JsonObject)oto;
-			// Clear To
-			jto.entrySet().clear();
-			// Copy
-			for (Entry<String, JsonElement> entry : jfrom.entrySet())
-			{
-				jto.add(entry.getKey(), entry.getValue());
-			} 
-		}
-		else
-		{
-			Accessor.get(this.getEntityClass()).copy(ofrom, oto);
-		}
+		if (efrom == null) throw new NullPointerException("efrom");
+		if (eto == null) throw new NullPointerException("eto");
+		
+		eto.load(efrom);
 	}
 	
 	// This simply creates and returns a new instance
 	// It does not detach/attach or anything. Just creates a new instance.
-	// TODO: Would it ever make sense for this to fail?
-	// Should we just throw an exception immediately if it fails?
 	@Override
 	public E createNewInstance()
 	{
@@ -261,13 +254,11 @@ public class Coll<E> extends CollAbstract<E>
 		return this.attach(entity, oid, true);
 	}
 
-	@SuppressWarnings({ "unchecked", "rawtypes" })
 	protected synchronized String attach(E entity, Object oid, boolean noteModification)
 	{
 		// Check entity
 		if (entity == null) return null;
-		String previousEntityId = this.getId(entity);
-		if (previousEntityId != null) return previousEntityId;
+		if (entity.attached()) return entity.getId();
 		
 		String id;
 		// Check/Fix id
@@ -286,15 +277,11 @@ public class Coll<E> extends CollAbstract<E>
 		this.preAttach(entity, id);
 		
 		// Add entity reference info
-		if (entity instanceof Entity)
-		{
-			((Entity)entity).setColl(this);
-			((Entity)entity).setId(id);
-		}
+		entity.setColl(this);
+		entity.setId(id);
 		
 		// Attach
 		this.id2entity.put(id, entity);
-		this.entity2id.put(entity, id);
 		
 		// Identify Modification
 		if (noteModification)
@@ -307,24 +294,22 @@ public class Coll<E> extends CollAbstract<E>
 		
 		return id;
 	}
-		
-	@SuppressWarnings("unchecked")
+	
 	@Override
-	public E detachEntity(Object entity)
+	public E detachEntity(E entity)
 	{
 		if (entity == null) throw new NullPointerException("entity");
-		
-		E e = (E)entity;
-		String id = this.getId(e);
+
+		String id = entity.getId();
 		if (id == null)
 		{
 			// It seems the entity is already detached.
 			// In such case just silently return it.
-			return e;
+			return entity;
 		}
 		
-		this.detachFixed(e, id);
-		return e;
+		this.detachFixed(entity, id);
+		return entity;
 	}
 	
 	@Override
@@ -360,37 +345,25 @@ public class Coll<E> extends CollAbstract<E>
 	@Override
 	public void preAttach(E entity, String id)
 	{
-		if (entity instanceof Entity)
-		{
-			((Entity<?>)entity).preAttach(id);
-		}
+		entity.preAttach(id);
 	}
 	
 	@Override
 	public void postAttach(E entity, String id)
 	{
-		if (entity instanceof Entity)
-		{
-			((Entity<?>)entity).postAttach(id);
-		}
+		entity.postAttach(id);
 	}
 	
 	@Override
 	public void preDetach(E entity, String id)
 	{
-		if (entity instanceof Entity)
-		{
-			((Entity<?>)entity).preDetach(id);
-		}
+		entity.preDetach(id);
 	}
 	
 	@Override
 	public void postDetach(E entity, String id)
 	{
-		if (entity instanceof Entity)
-		{
-			((Entity<?>)entity).postDetach(id);
-		}
+		entity.postDetach(id);
 	}
 	
 	// -------------------------------------------- //
@@ -399,7 +372,18 @@ public class Coll<E> extends CollAbstract<E>
 	
 	protected Map<String, Modification> identifiedModifications;
 	
-	protected synchronized void removeIdentifiedModificationFixed(String id)
+	@Override
+	public synchronized void putIdentifiedModificationFixed(String id, Modification modification)
+	{
+		if (id == null) throw new NullPointerException("id");
+		if (modification == null) throw new NullPointerException("modification");
+		Modification old = this.identifiedModifications.get(id);
+		if (old != null && modification.getPriority() <= old.getPriority()) return;
+		this.identifiedModifications.put(id, modification);
+	}
+	
+	@Override
+	public synchronized void removeIdentifiedModificationFixed(String id)
 	{
 		if (id == null) throw new NullPointerException("id");
 		this.identifiedModifications.remove(id);
@@ -408,21 +392,7 @@ public class Coll<E> extends CollAbstract<E>
 	// -------------------------------------------- //
 	// SYNCLOG
 	// -------------------------------------------- //
-	
-	// The strings are the ids.
-	protected Map<String, Long> lastMtime;
-	protected Map<String, JsonElement> lastRaw;
-	protected Set<String> lastDefault;
-	
-	protected synchronized void clearSynclogFixed(String id)
-	{
-		if (id == null) throw new NullPointerException("id");
-		
-		this.lastMtime.remove(id);
-		this.lastRaw.remove(id);
-		this.lastDefault.remove(id);
-	}
-	
+
 	// Log database synchronization for display in the "/massivecore mstore stats" command.
 	private Map<String, Long> id2out = new TreeMap<String, Long>();
 	private Map<String, Long> id2in = new TreeMap<String, Long>();
@@ -453,26 +423,20 @@ public class Coll<E> extends CollAbstract<E>
 	// SYNC LOWLEVEL IO ACTIONS
 	// -------------------------------------------- //
 	
-	@SuppressWarnings({ "unchecked", "rawtypes" })
 	@Override
 	public synchronized E removeAtLocalFixed(String id)
 	{
 		if (id == null) throw new NullPointerException("id");
 		
 		this.removeIdentifiedModificationFixed(id);
-		this.clearSynclogFixed(id);
 		
 		E entity = this.id2entity.remove(id);
 		if (entity == null) return null;
-		
-		this.entity2id.remove(entity);
+		entity.clearSyncLogFields();
 		
 		// Remove entity reference info
-		if (entity instanceof Entity)
-		{
-			((Entity)entity).setColl(null);
-			((Entity)entity).setId(null);
-		}
+		entity.setColl(null);
+		entity.setId(null);
 		
 		return entity;
 	}
@@ -483,9 +447,9 @@ public class Coll<E> extends CollAbstract<E>
 		if (id == null) throw new NullPointerException("id");
 		
 		this.removeIdentifiedModificationFixed(id);
-		this.clearSynclogFixed(id);
 		
 		this.getDb().delete(this, id);
+		Mixin.syncModification(this, id);
 	}
 	
 	@Override
@@ -494,30 +458,32 @@ public class Coll<E> extends CollAbstract<E>
 		if (id == null) throw new NullPointerException("id");
 		
 		this.removeIdentifiedModificationFixed(id);
-		this.clearSynclogFixed(id);
 		
 		E entity = this.id2entity.get(id);
 		if (entity == null) return;
+		entity.clearSyncLogFields();
 		
-		JsonElement raw = this.getGson().toJsonTree(entity, this.getEntityClass());
-		this.lastRaw.put(id, raw);
+		JsonObject raw = this.getGson().toJsonTree(entity, this.getEntityClass()).getAsJsonObject();
+		entity.setLastRaw(raw);
 		
 		if (this.isDefault(entity))
 		{
 			this.getDb().delete(this, id);
-			this.lastDefault.add(id);
+			entity.setLastDefault(true);
 		}
 		else
 		{
 			long mtime = this.getDb().save(this, id, raw);
-			if (mtime == 0) return; // This fail should not happen often. We could handle it better though.
-			this.lastMtime.put(id, mtime);
+			// TODO: This fail should not happen often. We could handle it better though.
+			// Perhaps we should log it, or simply try again.
+			if (mtime == 0) return;
+			entity.setLastMtime(mtime);
 		}
+		Mixin.syncModification(entity);
 	}
 	
-	@SuppressWarnings("unchecked")
 	@Override
-	public synchronized void loadFromRemoteFixed(String id, Entry<JsonElement, Long> remoteEntry)
+	public synchronized void loadFromRemoteFixed(String id, Entry<JsonObject, Long> remoteEntry)
 	{
 		if (id == null) throw new NullPointerException("id");
 		
@@ -536,42 +502,13 @@ public class Coll<E> extends CollAbstract<E>
 			}
 		}
 		
+		JsonObject raw = remoteEntry.getKey();
 		Long mtime = remoteEntry.getValue();
-		if (mtime == null)
-		{
-			logLoadError(id, "Last modification time (mtime) was null. The file might not be readable or simply not exist.");
-			return;
-		}
-		
-		if (mtime == 0)
-		{
-			logLoadError(id, "Last modification time (mtime) was 0. The file might not be readable or simply not exist.");
-			return;
-		}
-		
-		JsonElement raw = remoteEntry.getKey();
-		if (raw == null)
-		{
-			logLoadError(id, "Raw data was null. Is the file completely empty?");
-			return;
-		}
-		if (raw.isJsonNull())
-		{
-			logLoadError(id, "Raw data was JSON null. It seems you have a file containing just the word \"null\". Why would you do this?");
-			return;
-		}
+		if ( ! this.remoteEntryIsOk(id, remoteEntry)) return;
 		
 		// Calculate temp but handle raw cases.
-		E temp = null;
-		if (this.getEntityClass().isAssignableFrom(JsonObject.class))
-		{
-			temp = (E) raw;
-		}
-		else
-		{
-			temp = this.getGson().fromJson(raw, this.getEntityClass());
-		}
-		E entity = this.get(id, false);
+		E temp = this.getGson().fromJson(raw, this.getEntityClass());
+		E entity = this.getFixed(id, false);
 		if (entity != null)
 		{
 			// It did already exist
@@ -587,11 +524,45 @@ public class Coll<E> extends CollAbstract<E>
 			
 			// Then attach!
 			this.attach(entity, id, false);
+			
+			// On creation it might be modified by addition or removal of new/old fields.
+			// So we must do a check for that.
+			// this.putIdentifiedModificationFixed(id, Modification.UNKNOWN);
 		}
 		
-		this.lastRaw.put(id, raw);
-		this.lastMtime.put(id, mtime);
-		this.lastDefault.remove(id);
+		entity.setLastRaw(raw);
+		entity.setLastMtime(mtime);
+		entity.setLastDefault(false);
+	}
+	
+	public boolean remoteEntryIsOk(String id, Entry<JsonObject, Long> remoteEntry)
+	{
+		Long mtime = remoteEntry.getValue();
+		if (mtime == null)
+		{
+			this.logLoadError(id, "Last modification time (mtime) was null. The file might not be readable or simply not exist.");
+			return false;
+		}
+		
+		if (mtime == 0)
+		{
+			this.logLoadError(id, "Last modification time (mtime) was 0. The file might not be readable or simply not exist.");
+			return false;
+		}
+		
+		JsonObject raw = remoteEntry.getKey();
+		if (raw == null)
+		{
+			this.logLoadError(id, "Raw data was null. Is the file completely empty?");
+			return false;
+		}
+		if (raw.isJsonNull())
+		{
+			this.logLoadError(id, "Raw data was JSON null. It seems you have a file containing just the word \"null\". Why would you do this?");
+			return false;
+		}
+		
+		return true;
 	}
 	
 	public void logLoadError(String entityId, String error)
@@ -607,66 +578,84 @@ public class Coll<E> extends CollAbstract<E>
 	// -------------------------------------------- //
 	
 	@Override
-	public Modification examineIdFixed(String id, Long remoteMtime)
+	public Modification examineIdFixed(String id, Long remoteMtime, boolean local, boolean remote)
 	{
 		if (id == null) throw new NullPointerException("id");
-		// Local Attach and Detach has the top priority.
-		// Otherwise newly attached entities would be removed thinking it was a remote detach.
-		// Otherwise newly detached entities would be loaded thinking it was a remote attach.
-		Modification ret = this.identifiedModifications.get(id);
+		if (!local && !remote) throw new IllegalArgumentException("Must be either remote or local.");
+		
+		Modification current = this.identifiedModifications.get(id);
 		// DEBUG
 		// if (Bukkit.isPrimaryThread())
 		// {
 		// 	MassiveCore.get().log(Txt.parse("<a>examineId <k>Coll: <v>%s <k>Entity: <v>%s <k>Modification: <v>%s", this.getName(), id, ret));
 		// }
-		if (ret == Modification.LOCAL_ATTACH || ret == Modification.LOCAL_DETACH) return ret;
+		if (current != null && current.hasTopPriority()) return current;
 		
 		E localEntity = this.id2entity.get(id);
-		if (remoteMtime == null)
+		if (remoteMtime == null && remote)
 		{
 			// TODO: This is slow
 			remoteMtime = this.getDb().getMtime(this, id);
 		}
 		
 		boolean existsLocal = (localEntity != null);
-		boolean existsRemote = (remoteMtime != 0);
+		boolean existsRemote = remote ? (remoteMtime != 0) : true;
 		
+		// So we don't have this anywhere?
 		if ( ! existsLocal && ! existsRemote) return Modification.UNKNOWN;
 		
+		// If we have it both locally and remotely...
 		if (existsLocal && existsRemote)
 		{
-			Long lastMtime = this.lastMtime.get(id);
-			if (remoteMtime.equals(lastMtime) == false) return Modification.REMOTE_ALTER;
+			long lastMtime = localEntity.getLastMtime();
 			
-			if (this.examineHasLocalAlterFixed(id, localEntity)) return Modification.LOCAL_ALTER;
+			// ...and we are looking for remote changes...
+			if (remote)
+			{
+				// ...and it was modified remotely.
+				if ( ! remoteMtime.equals(lastMtime)) return Modification.REMOTE_ALTER;	
+			}
+			// ...and we are looking for local changes
+			if (local)
+			{
+				// ...and it was modified locally.
+				if (this.examineHasLocalAlterFixed(id, localEntity)) return Modification.LOCAL_ALTER;	
+			}
 		}
+		// Otherwise, if we only have it locally...
 		else if (existsLocal)
 		{
-			if (this.lastDefault.contains(id))
+			// ...and we look for local changes, and it was default...
+			if (local && localEntity.getLastDefault())
 			{
+				// ...then perhaps it was locally modified
 				if (this.examineHasLocalAlterFixed(id, localEntity)) return Modification.LOCAL_ALTER;
 			}
-			else
+			// ...if we look for remote changes, and it wasn't default
+			else if (remote && !localEntity.getLastDefault())
 			{
+				//...then it was remotely detached.
 				return Modification.REMOTE_DETACH;
 			}
 		}
-		else if (existsRemote)
+		// If we just have it remotely and look for remote changes. It was attached there.
+		else if (remote && existsRemote)
 		{
 			return Modification.REMOTE_ATTACH;
 		}
 		
+		// No modification was made.
 		return Modification.NONE;
 	}
 	
 	protected boolean examineHasLocalAlterFixed(String id, E entity)
 	{
-		JsonElement lastRaw = this.lastRaw.get(id);
-		JsonElement currentRaw = null;
+		JsonObject lastRaw = entity.getLastRaw();
+		JsonObject currentRaw = null;
 		
 		try
 		{
-			currentRaw = this.getGson().toJsonTree(entity, this.getEntityClass());
+			currentRaw = this.getGson().toJsonTree(entity, this.getEntityClass()).getAsJsonObject();
 		}
 		catch (Exception e)
 		{
@@ -681,16 +670,27 @@ public class Coll<E> extends CollAbstract<E>
 	}
 
 	@Override
-	public Modification syncIdFixed(String id, Modification modification, Entry<JsonElement, Long> remoteEntry)
+	public Modification syncIdFixed(String id, Modification modification, Entry<JsonObject, Long> remoteEntry)
 	{
 		if (id == null) throw new NullPointerException("id");
-		if (modification == null || modification == Modification.UNKNOWN)
+		if (modification == null || modification.isUnknown())
 		{
 			Long remoteMtime = null;
 			if (remoteEntry != null) remoteMtime = remoteEntry.getValue();
 			
-			modification = this.examineIdFixed(id, remoteMtime);
+			Modification actualModification = this.examineIdFixed(id, remoteMtime, true, true);
+			if (MassiveCoreMConf.get().warnOnLocalAlter && modification == Modification.UNKNOWN_LOG && actualModification.isModified())
+			{
+				E entity = this.id2entity.get(id);
+				if (entity != null)
+				{
+					this.logModification(entity, actualModification);	
+				}
+			}
+			modification = actualModification;
 		}
+		if (MStore.DEBUG_ENABLED) System.out.println(this.getDebugName() + " syncronising " + modification + " on " + id);
+		
 		
 		// DEBUG
 		// MassiveCore.get().log(Txt.parse("<a>syncId <k>Coll: <v>%s <k>Entity: <v>%s <k>Modification: <v>%s", this.getName(), id, modification));
@@ -739,42 +739,160 @@ public class Coll<E> extends CollAbstract<E>
 		return modification;
 	}
 	
+	protected void logModification(E entity, Modification modification)
+	{
+		JsonObject lastRaw = entity.getLastRaw();
+		
+		if (lastRaw == null)
+		{
+			List<String> messages = new MassiveList<>();
+			messages.add(Txt.parse("<pink>%s", this.getDebugName()));
+			messages.add(Txt.parse("<aqua>%s", entity.getId()));
+			messages.add(Txt.parse("<blue>%s", modification));
+			String message = Txt.implode(messages, Txt.parse("<silver> | "));
+			message = Txt.parse("<b>[lastRaw null] %s", message);
+			MassiveCore.get().log(message);
+			return;
+		}
+		
+		JsonObject currentRaw = this.getGson().toJsonTree(entity).getAsJsonObject();
+		
+		List<String> changes = new MassiveList<>();
+		
+		// Check removal and modification.
+		for (Entry<String, JsonElement> entry : lastRaw.entrySet())
+		{
+			String name = entry.getKey();
+			JsonElement currentValue = currentRaw.get(name);
+			if (currentValue == null)
+			{
+				changes.add(Txt.parse("<b>%s", name));
+				continue;
+			}
+			JsonElement lastValue = entry.getValue();
+			if (MStore.equal(currentValue, lastValue)) continue;
+			changes.add(Txt.parse("<i>%s", name));
+		}
+		
+		// Check for addition
+		for (Entry<String, JsonElement> entry : currentRaw.entrySet())
+		{
+			String name = entry.getKey();
+			if (lastRaw.has(name)) continue;
+			changes.add(Txt.parse("<g>%s", name));
+		}
+		
+		// Log
+		if (changes.isEmpty()) return;
+		changes.add(0, Txt.parse("<pink>%s", this.getDebugName()));
+		changes.add(1, Txt.parse("<aqua>%s", entity.getId()));
+		String change = Txt.implode(changes, Txt.parse("<silver> | "));
+		String message = Txt.parse("<b>[Unreported Modification] %s", change);
+		
+		MassiveCore.get().log(message);
+	}
+	
 	@Override
-	public void identifyModifications()
+	public void identifyModifications(Modification veto)
 	{
 		// Get remote id2mtime snapshot
 		Map<String, Long> id2RemoteMtime = this.getDb().getId2mtime(this);
 		
-		// Compile a list of all ids (both remote and local)
-		Set<String> allids = new HashSet<String>();
-		allids.addAll(id2RemoteMtime.keySet());
-		allids.addAll(this.id2entity.keySet());
+		// Java 8
+		//this.id2entity.keySet().forEach(id -> id2RemoteMtime.putIfAbsent(id, 0));
+		
+		// Java 8 >
+		for (String id : this.id2entity.keySet())
+		{
+			if (id2RemoteMtime.containsKey(id)) continue;
+			id2RemoteMtime.put(id,  0L);
+		}
 		
 		// Check for modifications
-		for (String id : allids)
+		for (Entry<String, Long> entry : id2RemoteMtime.entrySet())
 		{
-			Long remoteMtime = id2RemoteMtime.get(id);
-			if (remoteMtime == null) remoteMtime = 0L;
-			
-			Modification modification = this.examineIdFixed(id, remoteMtime);
-			if (modification.isModified())
-			{
-				this.identifiedModifications.put(id, modification);
-			}
+			this.identifyModificationFixed(entry.getKey(), entry.getValue(), veto);
 		}
 	}
 	
 	@Override
-	public void syncIdentified(boolean safe)
+	public void identifyModificationFixed(String id, Long remoteMtime, Modification veto)
+	{
+		if (id == null) throw new NullPointerException("id");
+		
+		Modification modification = this.examineIdFixed(id, remoteMtime, true, true);
+		this.storeModificationIdentification(id, modification, veto);
+	}
+	
+	@Override
+	public void identifyLocalModifications(Modification veto)
+	{
+		for (String id : id2entity.keySet())
+		{
+			this.identifyLocalModificationFixed(id, veto);
+		}
+	}
+	
+	@Override
+	public void identifyLocalModificationFixed(String id, Modification veto)
+	{
+		if (id == null) throw new NullPointerException("id");
+		
+		Modification modification = this.examineIdFixed(id, null, true, false);
+		this.storeModificationIdentification(id, modification, veto);
+	}
+	
+	@Override
+	public void identifyRemoteModifications(Modification veto)
+	{
+		// Get remote id2mtime snapshot
+		Map<String, Long> id2RemoteMtime = this.getDb().getId2mtime(this);
+		
+		//Note: We must also check local ids, in case of remote detach.
+		
+		// Java 8
+		//this.id2entity.keySet().forEach(id -> id2RemoteMtime.putIfAbsent(id, 0));
+		
+		// Java 8 >
+		for (String id : this.id2entity.keySet())
+		{
+			if (id2RemoteMtime.containsKey(id)) continue;
+			id2RemoteMtime.put(id,  0L);
+		}
+		
+		// Check for modifications
+		for (Entry<String, Long> entry : id2RemoteMtime.entrySet())
+		{
+			this.identifyRemoteModificationFixed(entry.getKey(), entry.getValue(), veto);
+		}
+	}
+	
+	@Override
+	public void identifyRemoteModificationFixed(String id, Long remoteMtime, Modification veto)
+	{
+		if (id == null) throw new NullPointerException("id");
+		
+		Modification modification = this.examineIdFixed(id, remoteMtime, false, true);
+		this.storeModificationIdentification(id, modification, veto);
+	}
+	
+	protected void storeModificationIdentification(String id, Modification modification, Modification veto)
+	{
+		if (modification.isModified())
+		{
+			if (MStore.DEBUG_ENABLED) System.out.println(this.getDebugName() + " identified " + modification + " on " + id);
+			if (veto != null && ! modification.isSafe()) modification = veto;
+			this.putIdentifiedModificationFixed(id, modification);
+		}
+	}
+	
+	@Override
+	public void syncIdentified()
 	{
 		for (Entry<String, Modification> entry : this.identifiedModifications.entrySet())
 		{
 			String id = entry.getKey();
 			Modification modification = entry.getValue();
-			if (safe)
-			{
-				modification = null;
-			}
 			this.syncIdFixed(id, modification);
 		}
 	}
@@ -782,20 +900,20 @@ public class Coll<E> extends CollAbstract<E>
 	@Override
 	public void syncAll()
 	{
-		this.identifyModifications();
-		this.syncIdentified(false);
+		this.identifyModifications(null);
+		this.syncIdentified();
 	}
 	
 	@Override
 	public void initLoadAllFromRemote()
 	{
-		Map<String, Entry<JsonElement, Long>> idToEntryMap = this.getDb().loadAll(this);
+		Map<String, Entry<JsonObject, Long>> idToEntryMap = this.getDb().loadAll(this);
 		if (idToEntryMap == null) return;
 		
-		for (Entry<String, Entry<JsonElement, Long>> idToEntry : idToEntryMap.entrySet())
+		for (Entry<String, Entry<JsonObject, Long>> idToEntry : idToEntryMap.entrySet())
 		{
 			String id = idToEntry.getKey();
-			Entry<JsonElement, Long> remoteEntry = idToEntry.getValue();
+			Entry<JsonObject, Long> remoteEntry = idToEntry.getValue();
 			loadFromRemoteFixed(id, remoteEntry);
 		}
 	}
@@ -809,14 +927,14 @@ public class Coll<E> extends CollAbstract<E>
 	@Override
 	public void onTick()
 	{
-		this.syncIdentified(true);
+		this.syncIdentified();
 	}
 	
 	// -------------------------------------------- //
 	// CONSTRUCT
 	// -------------------------------------------- //
 	
-	public Coll(String name, Class<E> entityClass, Db db, Plugin plugin, boolean creative, boolean lowercasing, Comparator<? super String> idComparator, Comparator<? super E> entityComparator)
+	public Coll(String name, Class<E> entityClass, Db db, Plugin plugin)
 	{
 		// Setup the name and the parsed parts
 		this.name = name;
@@ -832,9 +950,7 @@ public class Coll<E> extends CollAbstract<E>
 		}
 		
 		// WHAT DO WE HANDLE?
-		this.entityClass = entityClass;		
-		this.creative = creative;
-		this.lowercasing = lowercasing;
+		this.entityClass = entityClass;
 		
 		// SUPPORTING SYSTEM
 		this.plugin = plugin;
@@ -842,16 +958,10 @@ public class Coll<E> extends CollAbstract<E>
 		this.collDriverObject = db.createCollDriverObject(this);
 		
 		// STORAGE
-		this.id2entity = entityComparator != null ? new ConcurrentSkipListMap<String, E>(idComparator) : new ConcurrentHashMap<String, E>();
-		this.entity2id = entityComparator != null ? new ConcurrentSkipListMap<E, String>(entityComparator) : new ConcurrentHashMap<E, String>();
+		this.id2entity = new ConcurrentHashMap<String, E>();
 		
-		// IDENTIFIED MODIFICATIONS
+		// ENTITY DATA
 		this.identifiedModifications = new ConcurrentHashMap<String, Modification>();
-		
-		// SYNCLOG
-		this.lastMtime = new ConcurrentHashMap<String, Long>();
-		this.lastRaw = new ConcurrentHashMap<String, JsonElement>();
-		this.lastDefault = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 		
 		this.tickTask = new Runnable()
 		{
@@ -859,23 +969,18 @@ public class Coll<E> extends CollAbstract<E>
 		};
 	}
 	
-	public Coll(String name, Class<E> entityClass, Db db, Plugin plugin, boolean creative, boolean lowercasing)
-	{
-		this(name, entityClass, db, plugin, creative, lowercasing, null, null);
-	}
-	
-	public Coll(String name, Class<E> entityClass, Db db, Plugin plugin)
-	{
-		this(name, entityClass, db, plugin, false, false);
-	}
-	
 	@Override
 	public void init()
 	{
-		if (this.inited()) return; // TODO: Would throwing an exception make more sense?
+		if (this.inited()) throw new IllegalStateException("Already initialised.");
+		
+		if (this.supportsPusher())
+		{
+			this.getPusher().init();
+		}
 		
 		this.initLoadAllFromRemote();
-		// this.syncAll();
+		//this.syncIdentified();
 		
 		name2instance.put(this.getName(), this);
 	}
@@ -883,7 +988,12 @@ public class Coll<E> extends CollAbstract<E>
 	@Override
 	public void deinit()
 	{
-		if ( ! this.inited()) return; // TODO: Would throwing an exception make more sense?
+		if ( ! this.inited()) throw new IllegalStateException("Not initialised.");
+		
+		if (this.supportsPusher())
+		{
+			this.getPusher().deinit();
+		}
 		
 		// TODO: Save outwards only? We may want to avoid loads at this stage...
 		this.syncAll();

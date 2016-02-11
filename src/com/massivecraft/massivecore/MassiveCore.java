@@ -27,12 +27,6 @@ import com.massivecraft.massivecore.adapter.MsonAdapter;
 import com.massivecraft.massivecore.adapter.MsonEventAdapter;
 import com.massivecraft.massivecore.adapter.PlayerInventoryAdapter;
 import com.massivecraft.massivecore.adapter.UUIDAdapter;
-import com.massivecraft.massivecore.chestgui.EngineChestGui;
-import com.massivecraft.massivecore.cmd.massivecore.CmdMassiveCore;
-import com.massivecraft.massivecore.cmd.massivecore.CmdMassiveCoreBuffer;
-import com.massivecraft.massivecore.cmd.massivecore.CmdMassiveCoreCmdurl;
-import com.massivecraft.massivecore.cmd.massivecore.CmdMassiveCoreStore;
-import com.massivecraft.massivecore.cmd.massivecore.CmdMassiveCoreUsys;
 import com.massivecraft.massivecore.collections.BackstringEnumSet;
 import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.collections.MassiveListDef;
@@ -44,14 +38,32 @@ import com.massivecraft.massivecore.collections.MassiveTreeMap;
 import com.massivecraft.massivecore.collections.MassiveTreeMapDef;
 import com.massivecraft.massivecore.collections.MassiveTreeSet;
 import com.massivecraft.massivecore.collections.MassiveTreeSetDef;
+import com.massivecraft.massivecore.command.massivecore.CmdMassiveCore;
+import com.massivecraft.massivecore.command.massivecore.CmdMassiveCoreBuffer;
+import com.massivecraft.massivecore.command.massivecore.CmdMassiveCoreCmdurl;
+import com.massivecraft.massivecore.command.massivecore.CmdMassiveCoreStore;
+import com.massivecraft.massivecore.command.massivecore.CmdMassiveCoreUsys;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreGank;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreChestGui;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreCollTick;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreCommandRegistration;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreDatabase;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreDestination;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreMain;
+import com.massivecraft.massivecore.engine.EngineMassiveCorePlayerLeave;
+import com.massivecraft.massivecore.engine.EngineMassiveCorePlayerState;
+import com.massivecraft.massivecore.engine.EngineMassiveCorePlayerUpdate;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreScheduledTeleport;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreTeleportMixinCause;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreVariable;
+import com.massivecraft.massivecore.engine.EngineMassiveCoreWorldNameSet;
 import com.massivecraft.massivecore.integration.vault.IntegrationVault;
-import com.massivecraft.massivecore.mixin.EngineTeleportMixinCause;
 import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.mson.MsonEvent;
 import com.massivecraft.massivecore.ps.PS;
 import com.massivecraft.massivecore.ps.PSAdapter;
-import com.massivecraft.massivecore.store.ExamineThread;
-import com.massivecraft.massivecore.teleport.EngineScheduledTeleport;
+import com.massivecraft.massivecore.store.ModificationPollerLocal;
+import com.massivecraft.massivecore.store.ModificationPollerRemote;
 import com.massivecraft.massivecore.util.IdUtil;
 import com.massivecraft.massivecore.util.MUtil;
 import com.massivecraft.massivecore.util.PlayerUtil;
@@ -131,6 +143,14 @@ public class MassiveCore extends MassivePlugin
 	}
 	
 	public static String getServerId() { return ConfServer.serverid; }
+	public static String getTaskServerId() { return MassiveCoreMConf.get().taskServerId; }
+	public static boolean isTaskServer()
+	{
+		String taskServerId = getTaskServerId();
+		if (taskServerId == null) return true;
+		if (getServerId().equals(taskServerId)) return true;
+		return false;
+	}
 	
 	// -------------------------------------------- //
 	// FIELDS
@@ -173,9 +193,6 @@ public class MassiveCore extends MassivePlugin
 		// TODO: Test and ensure reload compat.
 		// Coll.instances.clear();
 		
-		// Start the examine thread
-		ExamineThread.get().start();
-		
 		if ( ! preEnable()) return;
 		
 		// Load Server Config
@@ -185,22 +202,32 @@ public class MassiveCore extends MassivePlugin
 		IdUtil.setup();
 		
 		// Engine
-		EngineCollTick.get().activate();
-		MassiveCoreEngineMain.get().activate();
-		MassiveCoreEngineVariable.get().activate();
-		EngineScheduledTeleport.get().activate();
-		EngineTeleportMixinCause.get().activate();
-		MassiveCoreEngineWorldNameSet.get().activate();
-		MassiveCoreEngineCommandRegistration.get().activate();
-		MassiveCoreEngineDestination.get().activate();
+		EngineMassiveCoreChestGui.get().activate();
+		EngineMassiveCoreCollTick.get().activate();
+		EngineMassiveCoreCommandRegistration.get().activate();
+		EngineMassiveCoreDatabase.get().activate();
+		EngineMassiveCoreDestination.get().activate();
+		EngineMassiveCoreGank.get().activate();
+		EngineMassiveCoreMain.get().activate();
+		EngineMassiveCorePlayerLeave.get().activate();
+		EngineMassiveCorePlayerState.get().activate();
+		EngineMassiveCorePlayerUpdate.get().activate();
+		EngineMassiveCoreScheduledTeleport.get().activate();
+		EngineMassiveCoreTeleportMixinCause.get().activate();
+		EngineMassiveCoreVariable.get().activate();
+		EngineMassiveCoreWorldNameSet.get().activate();
+		
 		PlayerUtil.get().activate();
-		EngineChestGui.get().activate();
-		EngineGank.get().activate();
 		
 		// Collections
 		MultiverseColl.get().init();
 		AspectColl.get().init();
 		MassiveCoreMConfColl.get().init();
+		
+		// Start the examine threads
+		// Start AFTER initializing the MConf, because they rely on the MConf.
+		ModificationPollerLocal.get().start();
+		ModificationPollerRemote.get().start();
 		
 		// Register commands
 		this.outerCmdMassiveCore = new CmdMassiveCore() { public List<String> getAliases() { return MassiveCoreMConf.get().aliasesOuterMassiveCore; } };
@@ -234,7 +261,9 @@ public class MassiveCore extends MassivePlugin
 	public void onDisable()
 	{
 		super.onDisable();
-		ExamineThread.get().interrupt();
+		ModificationPollerLocal.get().interrupt();
+		ModificationPollerRemote.get().interrupt();
+		
 		MassiveCoreTaskDeleteFiles.get().run();
 		IdUtil.saveCachefileDatas();
 	}

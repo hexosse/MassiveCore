@@ -8,14 +8,16 @@ import java.util.Map.Entry;
 
 import org.bukkit.plugin.Plugin;
 
-import com.massivecraft.massivecore.Predictate;
-import com.massivecraft.massivecore.xlib.gson.JsonElement;
+import com.massivecraft.massivecore.Named;
+import com.massivecraft.massivecore.predicate.Predicate;
+import com.massivecraft.massivecore.xlib.gson.JsonObject;
 
-public interface CollInterface<E>
+public interface CollInterface<E extends Entity<E>> extends Named
 {
 	// -------------------------------------------- //
 	// WHAT DO WE HANDLE?
 	// -------------------------------------------- //
+	
 	public String getName();
 	public String getBasename();
 	public String getUniverse();
@@ -24,14 +26,24 @@ public interface CollInterface<E>
 	// -------------------------------------------- //
 	// SUPPORTING SYSTEM
 	// -------------------------------------------- //
+	
 	public Plugin getPlugin();
 	
 	public Db getDb();
 	public Object getCollDriverObject();
 	
+	public boolean supportsPusher();
+	public PusherColl getPusher();
+	
+	public String getDebugName();
+	
 	// -------------------------------------------- //
 	// STORAGE
 	// -------------------------------------------- //
+	
+	public String fixId(Object oid);
+	public String fixIdOrThrow(Object oid) throws IllegalArgumentException;
+	
 	public Map<String, E> getId2entity();
 	public E get(Object oid);
 	public E get(Object oid, boolean creative);
@@ -42,18 +54,35 @@ public interface CollInterface<E>
 	public boolean containsId(Object oid);
 	public boolean containsIdFixed(String id);
 	
-	public Map<E, String> getEntity2id();
-	public String getId(Object entity);
 	public boolean containsEntity(Object entity);
+	
 	public Collection<E> getAll();
-	public List<E> getAll(Predictate<? super E> where);
-	public List<E> getAll(Predictate<? super E> where, Comparator<? super E> orderby);
-	public List<E> getAll(Predictate<? super E> where, Comparator<? super E> orderby, Integer limit);
-	public List<E> getAll(Predictate<? super E> where, Comparator<? super E> orderby, Integer limit, Integer offset);
 	
-	public String fixId(Object oid);
-	public String fixIdOrThrow(Object oid) throws IllegalArgumentException;
+	public List<E> getAll(Iterable<?> oids, Predicate<? super E> where, Comparator<? super E> orderby, Integer limit, Integer offset);
+	public List<E> getAll(Iterable<?> oids, Predicate<? super E> where, Comparator<? super E> orderby, Integer limit);
+	public List<E> getAll(Iterable<?> oids, Predicate<? super E> where, Comparator<? super E> orderby);
+	public List<E> getAll(Iterable<?> oids, Predicate<? super E> where, Integer limit, Integer offset);
+	public List<E> getAll(Iterable<?> oids, Predicate<? super E> where, Integer limit);
+	public List<E> getAll(Iterable<?> oids, Comparator<? super E> orderby, Integer limit, Integer offset);
+	public List<E> getAll(Iterable<?> oids, Comparator<? super E> orderby, Integer limit);
+	public List<E> getAll(Iterable<?> oids, Predicate<? super E> where);
+	public List<E> getAll(Iterable<?> oids, Comparator<? super E> orderby);
+	public List<E> getAll(Iterable<?> oids, Integer limit, Integer offset);
+	public List<E> getAll(Iterable<?> oids, Integer limit);
+	public List<E> getAll(Iterable<?> oids);
 	
+	public List<E> getAll(Predicate<? super E> where, Comparator<? super E> orderby, Integer limit, Integer offset);
+	public List<E> getAll(Predicate<? super E> where, Comparator<? super E> orderby, Integer limit);
+	public List<E> getAll(Predicate<? super E> where, Comparator<? super E> orderby);
+	public List<E> getAll(Predicate<? super E> where, Integer limit, Integer offset);
+	public List<E> getAll(Predicate<? super E> where, Integer limit);
+	public List<E> getAll(Comparator<? super E> orderby, Integer limit, Integer offset);
+	public List<E> getAll(Comparator<? super E> orderby, Integer limit);
+	public List<E> getAll(Predicate<? super E> where);
+	public List<E> getAll(Comparator<? super E> orderby);
+	public List<E> getAll(Integer limit, Integer offset);
+	public List<E> getAll(Integer limit);
+		
 	// -------------------------------------------- //
 	// BEHAVIOR
 	// -------------------------------------------- //
@@ -72,7 +101,7 @@ public interface CollInterface<E>
 	// COPY AND CREATE
 	// -------------------------------------------- //
 	
-	public void copy(Object fromo, Object too);
+	public void copy(E fromo, E too);
 	
 	// This simply creates and returns a new instance
 	// It does not detach/attach or anything. Just creates a new instance.
@@ -90,7 +119,7 @@ public interface CollInterface<E>
 	public String attach(E entity);
 	public String attach(E entity, Object oid);
 	
-	public E detachEntity(Object entity);
+	public E detachEntity(E entity);
 	public E detachId(Object oid);
 	public E detachIdFixed(String id);
 	
@@ -101,15 +130,14 @@ public interface CollInterface<E>
 	public void postDetach(E entity, String id);
 	
 	// -------------------------------------------- //
-	// IDENTIFIED CHANGES
+	// IDENTIFIED MODIFICATIONS
 	// -------------------------------------------- //
+
+	public void putIdentifiedModification(Object oid, Modification modification);
+	public void putIdentifiedModificationFixed(String id, Modification modification);
 	
-	/*
-	public Set<L> localAttachIds();
-	public Set<L> localDetachIds();
-	public Set<L> changedIds();
-	public void clearIdentifiedChanges(Object oid);
-	*/
+	public void removeIdentifiedModification(Object oid);
+	public void removeIdentifiedModificationFixed(String id);
 	
 	// -------------------------------------------- //
 	// SYNC LOG
@@ -134,39 +162,48 @@ public interface CollInterface<E>
 	public E removeAtLocal(Object oid);
 	public void removeAtRemote(Object oid);
 	public void saveToRemote(Object oid);
-	public void loadFromRemote(Object oid, Entry<JsonElement, Long> remoteEntry);
+	public void loadFromRemote(Object oid, Entry<JsonObject, Long> remoteEntry);
 	
 	// Fixed id
 	public E removeAtLocalFixed(String id);
 	public void removeAtRemoteFixed(String id);
 	public void saveToRemoteFixed(String id);
-	public void loadFromRemoteFixed(String id, Entry<JsonElement, Long> remoteEntry);
+	public void loadFromRemoteFixed(String id, Entry<JsonObject, Long> remoteEntry);
 	
 	// -------------------------------------------- //
 	// SYNC EXAMINE AND DO
 	// -------------------------------------------- //
 	
 	// oid
-	public Modification examineId(Object oid);
-	public Modification examineId(Object oid, Long remoteMtime);
+	public Modification examineId(Object oid, Long remoteMtime, boolean local, boolean remote);
 	
 	// Fixed id
-	public Modification examineIdFixed(String id);
-	public Modification examineIdFixed(String id, Long remoteMtime);
+	public Modification examineIdFixed(String id, Long remoteMtime, boolean local, boolean remote);
 	
-	// oid
+	// Sync
 	public Modification syncId(Object oid);
-	public Modification syncId(Object oid, Modification modificationState);
-	public Modification syncId(Object oid, Modification modificationState, Entry<JsonElement, Long> remoteEntry);
+	public Modification syncId(Object oid, Modification modification);
+	public Modification syncId(Object oid, Modification modification, Entry<JsonObject, Long> remoteEntry);
 	
-	// fixed id
+	// Sync fixed
 	public Modification syncIdFixed(String id);
-	public Modification syncIdFixed(String id, Modification modificationState);
-	public Modification syncIdFixed(String id, Modification modificationState, Entry<JsonElement, Long> remoteEntry);
+	public Modification syncIdFixed(String id, Modification modification);
+	public Modification syncIdFixed(String id, Modification modification, Entry<JsonObject, Long> remoteEntry);
 	
-	public void syncIdentified(boolean safe);
+	public void syncIdentified();
 	public void syncAll();
-	public void identifyModifications();
+	
+	// Identity
+	public void identifyModifications(Modification veto);
+	public void identifyModificationFixed(String id, Long remoteMtime, Modification veto);
+	
+	public void identifyLocalModifications(Modification veto);
+	public void identifyLocalModificationFixed(String id, Modification veto);
+	
+	public void identifyRemoteModifications(Modification veto);
+	public void identifyRemoteModificationFixed(String id, Long remoteMtime, Modification veto);
+	
+	// Init
 	public void initLoadAllFromRemote();
 	
 	// -------------------------------------------- //
