@@ -17,12 +17,12 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.Map.Entry;
-import java.util.regex.Pattern;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -65,6 +65,7 @@ import com.massivecraft.massivecore.comparator.ComparatorCaseInsensitive;
 import com.massivecraft.massivecore.engine.EngineMassiveCoreDatabase;
 import com.massivecraft.massivecore.engine.EngineMassiveCoreMain;
 import com.massivecraft.massivecore.engine.EngineMassiveCoreWorldNameSet;
+import com.massivecraft.massivecore.mixin.Mixin;
 import com.massivecraft.massivecore.nms.NmsEntity;
 import com.massivecraft.massivecore.predicate.Predicate;
 import com.massivecraft.massivecore.util.extractor.Extractor;
@@ -524,6 +525,23 @@ public class MUtil
 	}
 	
 	// -------------------------------------------- //
+	// STACK TRACE: DEBUG
+	// -------------------------------------------- //
+	
+	public static void stackTraceDebug(String title)
+	{
+		// Create
+		List<String> messages = new MassiveList<>();
+		
+		// Fill
+		messages.add(Txt.titleize(title).toPlain(true));
+		messages.addAll(MUtil.getStackTraceStrings(1, true));
+		
+		// Message
+		Mixin.messageOne(IdUtil.CONSOLE_ID, messages);
+	}
+	
+	// -------------------------------------------- //
 	// LIST OPERATIONS
 	// -------------------------------------------- //
 	
@@ -533,6 +551,15 @@ public class MUtil
 		for (int i = 1; i <= times; i++)
 		{
 			ret.add(object);
+		}
+		return ret;
+	}
+	public static List<Integer> range(int from, int to)
+	{
+		List<Integer> ret = new MassiveList<>(to - from);
+		for (int i = from; i < to; i++)
+		{
+			ret.add(i);
 		}
 		return ret;
 	}
@@ -1736,11 +1763,19 @@ public class MUtil
 		return d;
 	}
 	
-	public static long probabilityRound(double val)
+	public static long probabilityRound(double value)
 	{
-		long ret = (long) Math.floor(val);
-		double prob = val % 1;
-		if (MassiveCore.random.nextDouble() < prob) ret += 1;
+		long ret = (long) Math.floor(value);
+		double probability = value % 1;
+		if (MassiveCore.random.nextDouble() < probability) ret += 1;
+		return ret;
+	}
+	
+	public static int probabilityRound(float value)
+	{
+		int ret = (int) Math.floor(value);
+		float probability = value % 1;
+		if (MassiveCore.random.nextFloat() < probability) ret += 1;
 		return ret;
 	}
 	

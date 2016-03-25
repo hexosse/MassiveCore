@@ -1,12 +1,15 @@
 package com.massivecraft.massivecore.util;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.inventory.InventoryType.SlotType;
@@ -14,9 +17,11 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.material.MaterialData;
 
 import com.massivecraft.massivecore.MassiveCore;
+import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.mixin.Mixin;
 
 public class InventoryUtil
@@ -60,74 +65,141 @@ public class InventoryUtil
 	// EVENT INTERPRETATION
 	// -------------------------------------------- //
 	
+	public static boolean isOutside(int rawSlot)
+	{
+		return rawSlot < 0; 
+	}
+	public static boolean isTopInventory(int rawSlot, Inventory inventory)
+	{
+		if (isOutside(rawSlot)) return false;
+		return rawSlot < inventory.getSize();
+	}
+	public static boolean isBottomInventory(int rawSlot, Inventory inventory)
+	{
+		if (isOutside(rawSlot)) return false;
+		return rawSlot >= inventory.getSize();
+	}
+	
 	public static boolean isOutside(InventoryClickEvent event)
 	{
-		return event.getRawSlot() < 0; 
+		return isOutside(event.getRawSlot());
 	}
 	public static boolean isTopInventory(InventoryClickEvent event)
 	{
-		if (isOutside(event)) return false;
-		return event.getRawSlot() < event.getInventory().getSize();
+		return isTopInventory(event.getRawSlot(), event.getInventory());
 	}
 	public static boolean isBottomInventory(InventoryClickEvent event)
 	{
-		if (isOutside(event)) return false;
-		return event.getRawSlot() >= event.getInventory().getSize();
+		return isBottomInventory(event.getRawSlot(), event.getInventory());
 	}
 	
+	@Deprecated
 	public static boolean isGiving(InventoryClickEvent event)
 	{
-		if (isOutside(event)) return false;
-		boolean topClicked = isTopInventory(event);
-		
-		if (event.getClick() == ClickType.NUMBER_KEY)
-		{
-			if (!topClicked) return false;
-			if (isSomething(event.getCurrentItem())) return false;
-			ItemStack hotbar = event.getView().getBottomInventory().getItem(event.getHotbarButton());
-			if (isNothing(hotbar)) return false;
-			return true;
-		}
-		
-		boolean ret = false;
-		
-		if (topClicked)
-		{
-			ret = isSomething(event.getCursor());
-		}
-		else
-		{
-			ret = event.isShiftClick();
-		}
-		
-		return ret;
+		return getAlter(event).isGiving();
 	}
 	
+	@Deprecated
 	public static boolean isTaking(InventoryClickEvent event)
 	{
-		if (isOutside(event)) return false;
-		boolean topClicked = isTopInventory(event);
-		
-		if (event.getClick() == ClickType.NUMBER_KEY)
-		{
-			if (!topClicked) return false;
-			if (isNothing(event.getCurrentItem())) return false;
-			return true;
-		}
-		
-		boolean ret = false;
-		
-		if (topClicked)
-		{
-			ret = isSomething(event.getCurrentItem());
-		}
-		
-		return ret;
+		return getAlter(event).isTaking();
 	}
 	
 	public static boolean isAltering(InventoryClickEvent event)
 	{
-		return isGiving(event) || isTaking(event);
+		return getAlter(event).isAltering();
+	}
+	
+	public static InventoryAlter getAlter(InventoryClickEvent event)
+	{
+		if (isOutside(event)) return InventoryAlter.NONE;
+		boolean topClicked = isTopInventory(event);
+		InventoryAction action = event.getAction();
+		
+		if (topClicked)
+		{
+			switch (action)
+			{
+				// TODO
+				case UNKNOWN:
+					break;
+				
+				// Possibly both
+				case HOTBAR_SWAP:
+					ItemStack hotbar = event.getView().getBottomInventory().getItem(event.getHotbarButton());
+					ItemStack current = event.getCurrentItem();
+					boolean give = isSomething(hotbar);
+					boolean take = isSomething(current);
+					
+					return getAlter(give, take);
+					
+				// Neither give nor take
+				case NOTHING: return InventoryAlter.NONE;
+				case CLONE_STACK: return InventoryAlter.NONE;
+				case DROP_ALL_CURSOR: return InventoryAlter.NONE;
+				case DROP_ALL_SLOT: return InventoryAlter.NONE;
+				case DROP_ONE_CURSOR: return InventoryAlter.NONE;
+				case DROP_ONE_SLOT: return InventoryAlter.NONE;
+	
+				// Take
+				case PICKUP_ALL: return InventoryAlter.TAKE;
+				case PICKUP_HALF: return InventoryAlter.TAKE;
+				case PICKUP_ONE: return InventoryAlter.TAKE;
+				case PICKUP_SOME: return InventoryAlter.TAKE;
+				case MOVE_TO_OTHER_INVENTORY: return InventoryAlter.TAKE;
+				case COLLECT_TO_CURSOR:return InventoryAlter.TAKE;
+				case HOTBAR_MOVE_AND_READD: return InventoryAlter.TAKE;
+				
+				// Give
+				case PLACE_ALL: return InventoryAlter.GIVE;
+				case PLACE_ONE: return InventoryAlter.GIVE;
+				case PLACE_SOME: return InventoryAlter.GIVE;
+				case SWAP_WITH_CURSOR: return InventoryAlter.BOTH;
+
+			}
+			throw new RuntimeException("Unsupported action: " + action);
+		}
+		else
+		{
+			if (action == InventoryAction.MOVE_TO_OTHER_INVENTORY) return InventoryAlter.GIVE;
+			
+			// This one will possibly take, but we cannot be 100% sure.
+			// We will return TAKE for security reasons.
+			if (action == InventoryAction.COLLECT_TO_CURSOR) return InventoryAlter.TAKE;
+	
+			return InventoryAlter.NONE;
+		}
+	}
+	
+	private static InventoryAlter getAlter(boolean give, boolean take)
+	{
+		if (give && take) return InventoryAlter.BOTH;
+		if (give) return InventoryAlter.GIVE;
+		if (take) return InventoryAlter.TAKE;
+		return InventoryAlter.NONE;
+	}
+	
+	public enum InventoryAlter
+	{
+		GIVE,
+		TAKE,
+		NONE,
+		BOTH,
+		
+		;
+		
+		public boolean isAltering()
+		{
+			return this != NONE;
+		}
+		public boolean isGiving()
+		{
+			return this == GIVE || this == BOTH;
+		}
+		public boolean isTaking()
+		{
+			return this == TAKE || this == BOTH;
+		}
 	}
 	
 	/**
@@ -193,8 +265,7 @@ public class InventoryUtil
 		System.out.println("isOutside(event) " + isOutside(event));
 		System.out.println("isTopInventory(event) " + isTopInventory(event));
 		System.out.println("isBottomInventory(event) " + isBottomInventory(event));
-		System.out.println("isGiving(event) " + isGiving(event));
-		System.out.println("isTaking(event) " + isTaking(event));
+		System.out.println("getAlter(event) " + getAlter(event));
 		System.out.println("isAltering(event) " + isAltering(event));
 		System.out.println("isEquipping(event) " + isEquipping(event));
 		System.out.println("===== DEBUG END =====");
@@ -456,6 +527,78 @@ public class InventoryUtil
 			ret += item.getAmount();
 		}
 		return ret;
+	}
+	
+	// -------------------------------------------- //
+	// GETTERS AND SETTERS
+	// -------------------------------------------- //
+	
+	// META
+	
+	@SuppressWarnings("unchecked")
+	public static <T extends ItemMeta> T getMeta(ItemStack item)
+	{
+		if (item == null) return null;
+		if ( ! item.hasItemMeta()) return null;
+		return (T) item.getItemMeta();
+	}
+	
+	@SuppressWarnings("unchecked")
+	public static <T extends ItemMeta> T createMeta(ItemStack item)
+	{
+		if (item == null) return null;
+		return (T) item.getItemMeta();
+	}
+	
+	// DISPLAY NAME
+	
+	public static String getDisplayName(ItemStack item)
+	{
+		ItemMeta meta = getMeta(item);
+		if (meta == null) return null;
+		
+		if ( ! meta.hasDisplayName()) return null;
+		return meta.getDisplayName();
+	}
+	
+	public static void setDisplayName(ItemStack item, String displayName)
+	{
+		ItemMeta meta = createMeta(item);
+		if (meta == null) return;
+		
+		meta.setDisplayName(displayName);
+		item.setItemMeta(meta);
+	}
+	
+	public static boolean isDisplayName(ItemStack item, String displayName)
+	{
+		String value = getDisplayName(item);
+		return MUtil.equals(value, displayName);
+	}
+	
+	// LORE
+	
+	public static List<String> getLore(ItemStack item)
+	{
+		ItemMeta meta = getMeta(item);
+		if (meta == null) return null;
+		
+		if ( ! meta.hasLore()) return null;
+		return meta.getLore();
+	}
+	
+	public static void setLore(ItemStack item, Collection<String> lore)
+	{
+		ItemMeta meta = createMeta(item);
+		if (meta == null) return;
+		
+		meta.setLore(lore == null ? null : new MassiveList<>(lore));
+		item.setItemMeta(meta);
+	}
+	
+	public static void setLore(ItemStack item, String... lore)
+	{
+		setLore(item, Arrays.asList(lore));
 	}
 
 }

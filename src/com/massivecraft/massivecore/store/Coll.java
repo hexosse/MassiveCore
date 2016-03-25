@@ -11,18 +11,20 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-import org.bukkit.plugin.Plugin;
-
 import com.massivecraft.massivecore.MassiveCore;
 import com.massivecraft.massivecore.MassiveCoreMConf;
 import com.massivecraft.massivecore.MassivePlugin;
+import com.massivecraft.massivecore.Named;
 import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.comparator.ComparatorNaturalOrder;
 import com.massivecraft.massivecore.mixin.Mixin;
+import com.massivecraft.massivecore.predicate.Predicate;
+import com.massivecraft.massivecore.predicate.PredicateEqualsIgnoreCase;
 import com.massivecraft.massivecore.util.Txt;
 import com.massivecraft.massivecore.xlib.gson.Gson;
 import com.massivecraft.massivecore.xlib.gson.JsonElement;
 import com.massivecraft.massivecore.xlib.gson.JsonObject;
+import com.massivecraft.massivecore.xlib.gson.JsonSyntaxException;
 
 public class Coll<E extends Entity<E>> extends CollAbstract<E>
 {
@@ -58,8 +60,8 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 	// WHAT DO WE HANDLE?
 	// -------------------------------------------- //
 	
-	protected final String name;
-	@Override public String getName() { return this.name; }
+	protected final String id;
+	@Override public String getId() { return this.id; }
 	
 	protected final String basename;
 	@Override public String getBasename() { return this.basename; }
@@ -74,18 +76,13 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 	// SUPPORTING SYSTEM
 	// -------------------------------------------- //
 	
-	protected Plugin plugin;
-	@Override public Plugin getPlugin() { return this.plugin; }
+	protected MassivePlugin plugin;
+	@Override public MassivePlugin getPlugin() { return this.plugin; }
 	public Gson getGson()
 	{
-		if (this.getPlugin() instanceof MassivePlugin)
-		{
-			return ((MassivePlugin)this.getPlugin()).getGson();
-		}
-		else
-		{
-			return MassiveCore.gson;
-		}
+		MassivePlugin plugin = this.getPlugin();
+		if (plugin == null) return MassiveCore.gson;
+		return plugin.getGson();
 	}
 	
 	protected Db db;
@@ -502,12 +499,23 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 			}
 		}
 		
+		if ( ! this.remoteEntryIsOk(id, remoteEntry)) return;
 		JsonObject raw = remoteEntry.getKey();
 		Long mtime = remoteEntry.getValue();
-		if ( ! this.remoteEntryIsOk(id, remoteEntry)) return;
 		
 		// Calculate temp but handle raw cases.
-		E temp = this.getGson().fromJson(raw, this.getEntityClass());
+		E temp;
+		
+		try
+		{
+			temp = this.getGson().fromJson(raw, this.getEntityClass());	
+		}
+		catch (JsonSyntaxException ex)
+		{
+			logLoadError(id, ex.getMessage());
+			return;
+		}
+		
 		E entity = this.getFixed(id, false);
 		if (entity != null)
 		{
@@ -569,7 +577,7 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 	{
 		MassiveCore.get().log(Txt.parse("<b>Database could not load entity. You edited a file manually and made wrong JSON?"));
 		MassiveCore.get().log(Txt.parse("<k>Entity: <v>%s", entityId));
-		MassiveCore.get().log(Txt.parse("<k>Collection: <v>%s", this.getName()));
+		MassiveCore.get().log(Txt.parse("<k>Collection: <v>%s", this.getDebugName()));
 		MassiveCore.get().log(Txt.parse("<k>Error: <v>%s", error));
 	}
 	
@@ -700,7 +708,7 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 			case LOCAL_ALTER:
 			case LOCAL_ATTACH:
 				this.saveToRemoteFixed(id);
-				if (this.inited())
+				if (this.isActive())
 				{
 					this.addSyncCountFixed(TOTAL, false);
 					this.addSyncCountFixed(id, false);
@@ -708,7 +716,7 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 			break;
 			case LOCAL_DETACH:
 				this.removeAtRemoteFixed(id);
-				if (this.inited())
+				if (this.isActive())
 				{
 					this.addSyncCountFixed(TOTAL, false);
 					this.addSyncCountFixed(id, false);
@@ -717,7 +725,7 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 			case REMOTE_ALTER:
 			case REMOTE_ATTACH:
 				this.loadFromRemoteFixed(id, remoteEntry);
-				if (this.inited())
+				if (this.isActive())
 				{
 					this.addSyncCountFixed(TOTAL, true);
 					this.addSyncCountFixed(id, true);
@@ -725,7 +733,7 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 			break;
 			case REMOTE_DETACH:
 				this.removeAtLocalFixed(id);
-				if (this.inited())
+				if (this.isActive())
 				{
 					this.addSyncCountFixed(TOTAL, true);
 					this.addSyncCountFixed(id, true);
@@ -934,15 +942,15 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 	// CONSTRUCT
 	// -------------------------------------------- //
 	
-	public Coll(String name, Class<E> entityClass, Db db, Plugin plugin)
+	public Coll(String id, Class<E> entityClass, Db db, MassivePlugin plugin)
 	{
 		// Setup the name and the parsed parts
-		this.name = name;
-		String[] nameParts = this.name.split("\\@");
-		this.basename = nameParts[0];
-		if (nameParts.length > 1)
+		this.id = id;
+		String[] idParts = this.id.split("\\@");
+		this.basename = idParts[0];
+		if (idParts.length > 1)
 		{
-			this.universe = nameParts[1];
+			this.universe = idParts[1];
 		}
 		else
 		{
@@ -969,42 +977,89 @@ public class Coll<E extends Entity<E>> extends CollAbstract<E>
 		};
 	}
 	
+	// -------------------------------------------- //
+	// ACTIVE
+	// -------------------------------------------- //
+	
 	@Override
-	public void init()
+	public MassivePlugin setActivePlugin(MassivePlugin plugin)
 	{
-		if (this.inited()) throw new IllegalStateException("Already initialised.");
-		
-		if (this.supportsPusher())
-		{
-			this.getPusher().init();
-		}
-		
-		this.initLoadAllFromRemote();
-		//this.syncIdentified();
-		
-		name2instance.put(this.getName(), this);
+		MassivePlugin ret = this.plugin;
+		this.plugin = plugin;
+		return ret;
 	}
 	
 	@Override
-	public void deinit()
+	public MassivePlugin getActivePlugin()
 	{
-		if ( ! this.inited()) throw new IllegalStateException("Not initialised.");
-		
-		if (this.supportsPusher())
-		{
-			this.getPusher().deinit();
-		}
-		
-		// TODO: Save outwards only? We may want to avoid loads at this stage...
-		this.syncAll();
-		
-		name2instance.remove(this.getName());
+		return this.plugin;
 	}
 	
 	@Override
-	public boolean inited()
+	public void setActive(boolean active)
+	{
+		// NoChange
+		if (this.isActive() == active) throw new IllegalStateException("Active Already " + active);
+		
+		// TODO: Clean up this stuff below. It branches too late.
+		if (active)
+		{
+			if (this.supportsPusher())
+			{
+				this.getPusher().init();
+			}
+			
+			this.initLoadAllFromRemote();
+			//this.syncIdentified();
+			
+			name2instance.put(this.getName(), this);
+		}
+		else
+		{
+			if (this.supportsPusher())
+			{
+				this.getPusher().deinit();
+			}
+			
+			// TODO: Save outwards only? We may want to avoid loads at this stage...
+			this.syncAll();
+			
+			name2instance.remove(this.getName());
+		}
+	}
+	
+	@Override
+	public boolean isActive()
 	{
 		return name2instance.containsKey(this.getName());
 	}
 
+	
+	// -------------------------------------------- //
+	// NAME UTILITIES
+	// -------------------------------------------- //
+	
+	public E getByName(String name)
+	{
+		if (name == null) throw new NullPointerException("name");
+		
+		Predicate<String> predicate = PredicateEqualsIgnoreCase.get(name);
+		for (E entity : this.getAll())
+		{
+			if (entity == null) continue;
+			
+			if ( ! (entity instanceof Named)) continue;
+			Named named = (Named)entity;
+			
+			if (predicate.apply(named.getName())) return entity;
+		}
+		
+		return null;
+	}
+	
+	public boolean isNameTaken(String str)
+	{
+		return this.getByName(str) != null;
+	}
+	
 }

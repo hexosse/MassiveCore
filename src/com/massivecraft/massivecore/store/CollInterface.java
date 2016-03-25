@@ -6,19 +6,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.bukkit.plugin.Plugin;
-
+import com.massivecraft.massivecore.Active;
+import com.massivecraft.massivecore.Identified;
+import com.massivecraft.massivecore.MassivePlugin;
 import com.massivecraft.massivecore.Named;
 import com.massivecraft.massivecore.predicate.Predicate;
 import com.massivecraft.massivecore.xlib.gson.JsonObject;
 
-public interface CollInterface<E extends Entity<E>> extends Named
+public interface CollInterface<E extends Entity<E>> extends Named, Active, Identified
 {
 	// -------------------------------------------- //
 	// WHAT DO WE HANDLE?
 	// -------------------------------------------- //
 	
-	public String getName();
+	public String getId();
 	public String getBasename();
 	public String getUniverse();
 	public Class<E> getEntityClass();
@@ -27,7 +28,7 @@ public interface CollInterface<E extends Entity<E>> extends Named
 	// SUPPORTING SYSTEM
 	// -------------------------------------------- //
 	
-	public Plugin getPlugin();
+	public MassivePlugin getPlugin();
 	
 	public Db getDb();
 	public Object getCollDriverObject();
@@ -213,13 +214,5 @@ public interface CollInterface<E extends Entity<E>> extends Named
 	// The tickTask simply runs the onTick method.
 	public Runnable getTickTask();
 	public void onTick();
-	
-	// -------------------------------------------- //
-	// CONSTRUCT
-	// -------------------------------------------- //
-	
-	public void init();
-	public void deinit();
-	public boolean inited();
 	
 }

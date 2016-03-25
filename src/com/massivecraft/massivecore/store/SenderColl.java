@@ -5,8 +5,8 @@ import java.util.Collection;
 import java.util.List;
 
 import org.bukkit.command.CommandSender;
-import org.bukkit.plugin.Plugin;
 
+import com.massivecraft.massivecore.MassivePlugin;
 import com.massivecraft.massivecore.SenderPresence;
 import com.massivecraft.massivecore.SenderType;
 import com.massivecraft.massivecore.command.type.sender.TypeSenderEntity;
@@ -21,7 +21,7 @@ public class SenderColl<E extends SenderEntity<E>> extends Coll<E> implements Se
 	// CONSTRUCT
 	// -------------------------------------------- //
 	
-	public SenderColl(String name, Class<E> entityClass, Db db, Plugin plugin)
+	public SenderColl(String name, Class<E> entityClass, Db db, MassivePlugin plugin)
 	{	
 		super(name, entityClass, db, plugin);
 		this.setCreative(true);
@@ -42,22 +42,17 @@ public class SenderColl<E extends SenderEntity<E>> extends Coll<E> implements Se
 	// OVERRIDE: Coll
 	// -------------------------------------------- //
 	
-	public static void denyNpc(Object oid)
-	{
-		if (MUtil.isNpc(oid)) throw new IllegalArgumentException("NPCs are not allowed: " + oid);
-	}
-	
 	@Override
 	public E get(Object oid)
 	{
-		denyNpc(oid);
+		if (MUtil.isNpc(oid)) return null;
 		return super.get(oid);
 	}
 	
 	@Override
 	public E get(Object oid, boolean creative)
 	{
-		denyNpc(oid);
+		if (MUtil.isNpc(oid)) return null;
 		return super.get(oid, creative);
 	}
 	

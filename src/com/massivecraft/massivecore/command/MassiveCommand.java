@@ -14,14 +14,18 @@ import java.util.Set;
 import org.apache.commons.lang.StringUtils;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.PluginIdentifiableCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import com.massivecraft.massivecore.Active;
 import com.massivecraft.massivecore.Lang;
 import com.massivecraft.massivecore.MassiveException;
+import com.massivecraft.massivecore.MassivePlugin;
 import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.collections.MassiveMap;
 import com.massivecraft.massivecore.command.requirement.Requirement;
+import com.massivecraft.massivecore.command.requirement.RequirementAbstract;
 import com.massivecraft.massivecore.command.requirement.RequirementHasPerm;
 import com.massivecraft.massivecore.command.type.Type;
 import com.massivecraft.massivecore.mixin.Mixin;
@@ -30,7 +34,7 @@ import com.massivecraft.massivecore.predicate.PredicateStartsWithIgnoreCase;
 import com.massivecraft.massivecore.util.PermUtil;
 import com.massivecraft.massivecore.util.Txt;
 
-public class MassiveCommand
+public class MassiveCommand implements Active, PluginIdentifiableCommand
 {
 	// -------------------------------------------- //
 	// REGISTER
@@ -49,15 +53,15 @@ public class MassiveCommand
 	// When registering again we use the fresh and current aliases.
 	
 	// STATIC
-	private static final transient Map<MassiveCommand, Plugin> registry = new LinkedHashMap<MassiveCommand, Plugin>();
-	public static Map<MassiveCommand, Plugin> getRegistry() { return registry; }
+	private static final transient Map<MassiveCommand, MassivePlugin> registry = new LinkedHashMap<MassiveCommand, MassivePlugin>();
+	public static Map<MassiveCommand, MassivePlugin> getRegistry() { return registry; }
 	public static Set<MassiveCommand> getRegisteredCommands() { return registry.keySet(); }
 	public static void unregister(Plugin plugin)
 	{
-		Iterator<Entry<MassiveCommand, Plugin>> iter = registry.entrySet().iterator();
+		Iterator<Entry<MassiveCommand, MassivePlugin>> iter = registry.entrySet().iterator();
 		while (iter.hasNext())
 		{
-			Entry<MassiveCommand, Plugin> entry = iter.next();
+			Entry<MassiveCommand, MassivePlugin> entry = iter.next();
 			if (plugin.equals(entry.getValue()))
 			{
 				iter.remove();
@@ -65,11 +69,48 @@ public class MassiveCommand
 		}
 	}
 	
-	// INSTANCE
-	public Plugin register(Plugin plugin) { return registry.put(this, plugin); }
-	public void unregister() { registry.remove(this); }
-	public boolean isRegistered() { return registry.containsKey(this); }
-	public Plugin getRegisteredPlugin() { return registry.get(this); }
+	// -------------------------------------------- //
+	// ACTIVE
+	// -------------------------------------------- //
+	
+	@Override
+	public boolean isActive()
+	{
+		return registry.containsKey(this);
+	}
+	
+	@Override
+	public void setActive(boolean active)
+	{
+		// NOTE: Not Implemented
+	}
+	
+	public MassivePlugin setActivePlugin(MassivePlugin activePlugin)
+	{
+		if (activePlugin == null)
+		{
+			return registry.remove(this);
+		}
+		else
+		{
+			return registry.put(this, activePlugin);
+		}
+	}
+	
+	public MassivePlugin getActivePlugin()
+	{
+		return registry.get(this);
+	}
+	
+	// -------------------------------------------- //
+	// PLUGIN IDENTIFIABLE COMMAND
+	// -------------------------------------------- //
+	
+	@Override
+	public Plugin getPlugin()
+	{
+		return this.getActivePlugin();
+	}
 	
 	// -------------------------------------------- //
 	// FIELDS
@@ -125,7 +166,7 @@ public class MassiveCommand
 	protected String descPermission = null;
 	
 	// Free text displayed at the top of the help command.
-	protected List<String> help = new ArrayList<String>();
+	protected List<?> help = new ArrayList<>();
 	
 	// The visibility of this command in help command.
 	protected Visibility visibility = Visibility.VISIBLE; 
@@ -291,9 +332,9 @@ public class MassiveCommand
 	
 	public void addChild(MassiveCommand child, int index)
 	{
-		if (this.children.isEmpty() && ! (child instanceof HelpCommand))
+		if (this.children.isEmpty() && ! (child instanceof MassiveCommandHelp))
 		{
-			this.children.add(0, HelpCommand.get());
+			this.children.add(0, MassiveCommandHelp.get());
 			index++;
 		}
 		child.addToChain(this);
@@ -678,20 +719,12 @@ public class MassiveCommand
 	
 	public boolean isRequirementsMet(CommandSender sender, boolean verboose)
 	{
-		String error = this.getRequirementsError(sender, verboose);
-		if (error != null && verboose) Mixin.messageOne(sender, error);
-		return error == null;
+		return RequirementAbstract.isRequirementsMet(this.getRequirements(), sender, this, verboose);
 	}
 	
 	public String getRequirementsError(CommandSender sender, boolean verboose)
 	{
-		for (Requirement requirement : this.getRequirements())
-		{
-			if (requirement.apply(sender, this)) continue;
-			if ( ! verboose) return "";
-			return requirement.createErrorMessage(sender, this);
-		}
-		return null;
+		return RequirementAbstract.getRequirementsError(this.getRequirements(), sender, this, verboose);
 	}
 	
 	// -------------------------------------------- //
@@ -729,9 +762,9 @@ public class MassiveCommand
 		return null;
 	}
 		
-	public void setHelp(List<String> val) { this.help = val; }
-	public void setHelp(String... val) { this.help = Arrays.asList(val); }
-	public List<String> getHelp() { return this.help; }
+	public void setHelp(List<?> val) { this.help = val; }
+	public void setHelp(Object... val) { this.help = Arrays.asList(val); }
+	public List<?> getHelp() { return this.help; }
 	
 	public Visibility getVisibility() { return this.visibility; }
 	public void setVisibility(Visibility visibility) { this.visibility = visibility; }
@@ -903,7 +936,7 @@ public class MassiveCommand
 		List<MassiveCommand> chain = new ArrayList<MassiveCommand>(this.getChain());
 		chain.add(this);
 		
-		HelpCommand.get().execute(this.sender, this.getArgs(), chain);
+		MassiveCommandHelp.get().execute(this.sender, this.getArgs(), chain);
 	}
 
 	// -------------------------------------------- //

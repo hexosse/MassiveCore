@@ -27,7 +27,7 @@ public abstract class MoneyMixinAbstract implements MoneyMixin
 		if (fractionalDigits < 0) return amount;
 		
 		// 0 means no fractional digits
-		if (fractionalDigits == 0) return Math.ceil(amount);
+		if (fractionalDigits == 0) return moneyCeil(amount);
 		
 		// OK! I'll have to calculate :P
 		int factor = (int) Math.round(Math.pow(10, fractionalDigits));
@@ -38,6 +38,12 @@ public abstract class MoneyMixinAbstract implements MoneyMixin
 		return amount;
 	}
 	
+	public static double moneyCeil(double amount)
+	{
+		if (amount < 0) return Math.floor(amount);
+		else return Math.ceil(amount);
+	}
+	
 	// -------------------------------------------- //
 	// MOVE
 	// -------------------------------------------- //
@@ -45,7 +51,7 @@ public abstract class MoneyMixinAbstract implements MoneyMixin
 	// this is the abstract one
 	// public boolean move(String fromId, String toId, String byId, double amount, Collection<String> categories, String message);
 	
-	public boolean move(String fromId, String toId, String byId, double amount, String category, String message)
+	public boolean move(String fromId, String toId, String byId, double amount, String category, Object message)
 	{
 		return this.move(fromId, toId, byId, amount, (category == null ? null : Collections.singletonList(category)), message);
 	}
@@ -66,11 +72,11 @@ public abstract class MoneyMixinAbstract implements MoneyMixin
 	// SPAWN
 	// -------------------------------------------- //
 	
-	public boolean spawn(String toId, String byId, double amount, Collection<String> categories, String message)
+	public boolean spawn(String toId, String byId, double amount, Collection<String> categories, Object message)
 	{
 		return this.move(null, toId, byId, amount, categories, message);
 	}
-	public boolean spawn(String toId, String byId, double amount, String category, String message)
+	public boolean spawn(String toId, String byId, double amount, String category, Object message)
 	{
 		return this.move(null, toId, byId, amount, category, message);
 	}
@@ -91,11 +97,11 @@ public abstract class MoneyMixinAbstract implements MoneyMixin
 	// DESPAWN
 	// -------------------------------------------- //
 	
-	public boolean despawn(String fromId, String byId, double amount, Collection<String> categories, String message)
+	public boolean despawn(String fromId, String byId, double amount, Collection<String> categories, Object message)
 	{
 		return this.move(fromId, null, byId, amount, categories, message);
 	}
-	public boolean despawn(String fromId, String byId, double amount, String category, String message)
+	public boolean despawn(String fromId, String byId, double amount, String category, Object message)
 	{
 		return this.move(fromId, null, byId, amount, category, message);
 	}
@@ -116,11 +122,11 @@ public abstract class MoneyMixinAbstract implements MoneyMixin
 	// SET
 	// -------------------------------------------- //
 	
-	public boolean set(String accountId, String byId, double amount, Collection<String> categories, String message)
+	public boolean set(String accountId, String byId, double amount, Collection<String> categories, Object message)
 	{
 		return this.move(null, accountId, byId, amount - this.get(accountId), categories, message);
 	}
-	public boolean set(String accountId, String byId, double amount, String category, String message)
+	public boolean set(String accountId, String byId, double amount, String category, Object message)
 	{
 		return this.move(null, accountId, byId, amount - this.get(accountId), category, message);
 	}

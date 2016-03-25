@@ -1,12 +1,12 @@
 package com.massivecraft.massivecore.command.type.combined;
 
+import java.util.AbstractMap.SimpleEntry;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.regex.Pattern;
-import java.util.AbstractMap.SimpleEntry;
 
 import org.bukkit.command.CommandSender;
 
@@ -14,27 +14,26 @@ import com.massivecraft.massivecore.MassiveException;
 import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.command.type.Type;
 import com.massivecraft.massivecore.command.type.TypeAbstract;
+import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.util.Txt;
 
 public abstract class TypeCombined<T> extends TypeAbstract<T>
-{
+{	
+	// -------------------------------------------- //
+	// CONSTANTS
+	// -------------------------------------------- //
+	
+	public static final String SEPARATORS_DEFAULT = ", ";
+	public static final String SEPARATORS_LENIENT = " .,:-#";
+	
 	// -------------------------------------------- //
 	// FIELDS
 	// -------------------------------------------- //
 	
 	private Pattern separatorsPattern = null;
 	public Pattern getSeparatorsPattern() { return this.separatorsPattern; }
-	private void buildSeparatorsPattern()
-	{
-		StringBuilder regex = new StringBuilder();
-		regex.append("[");
-		for (char c : this.separators.toCharArray())
-		{
-			regex.append(Pattern.quote(String.valueOf(c)));
-		}
-		regex.append("]+");
-		separatorsPattern = Pattern.compile(regex.toString());
-	}
+	public void setSeparatorsPattern(Pattern separatorsPattern) { this.separatorsPattern = separatorsPattern; }
+	private void buildSeparatorsPattern() { this.separatorsPattern = buildSeparatorsPattern(this.separators); }
 	
 	private String separators = null;
 	public String getSeparators() { return this.separators; }
@@ -44,6 +43,46 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 		this.buildSeparatorsPattern();
 	}
 	
+	private String typeNameSeparator = " ";
+	public String getTypeNameSeparator() { return this.typeNameSeparator; }
+	public void setTypeNameSeparator(String typeNameSeparator) { this.typeNameSeparator = typeNameSeparator; }
+	
+	// Visual Mson
+	private boolean visualMsonNullIncluded = true;
+	public boolean isVisualMsonNullIncluded() { return this.visualMsonNullIncluded; }
+	public void setVisualMsonNullIncluded(boolean visualMsonNullIncluded) { this.visualMsonNullIncluded = visualMsonNullIncluded; }
+	
+	private Mson visualMsonSeparator = Mson.SPACE;
+	public Mson getVisualMsonSeparator() { return this.visualMsonSeparator; }
+	public void setVisualMsonSeparator(Mson visualMsonSeparator) { this.visualMsonSeparator = visualMsonSeparator; }
+	
+	// Visual
+	private boolean visualNullIncluded = true;
+	public boolean isVisualNullIncluded() { return this.visualNullIncluded; }
+	public void setVisualNullIncluded(boolean visualNullIncluded) { this.visualNullIncluded = visualNullIncluded; }
+	
+	private String visualSeparator = " ";
+	public String getVisualSeparator() { return this.visualSeparator; }
+	public void setVisualSeparator(String visualSeparator) { this.visualSeparator = visualSeparator; }
+	
+	// Name
+	private boolean nameNullIncluded = true;
+	public boolean isNameNullIncluded() { return this.nameNullIncluded; }
+	public void setNameNullIncluded(boolean nameNullIncluded) { this.nameNullIncluded = nameNullIncluded; }
+	
+	private String nameSeparator = " ";
+	public String getNameSeparator() { return this.nameSeparator; }
+	public void setNameSeparator(String nameSeparator) { this.nameSeparator = nameSeparator; }
+	
+	// Id
+	private boolean idNullIncluded = true;
+	public boolean isIdNullIncluded() { return this.idNullIncluded; }
+	public void setIdNullIncluded(boolean idNullIncluded) { this.idNullIncluded = idNullIncluded; }
+	
+	private String idSeparator = " ";
+	public String getIdSeparator() { return this.idSeparator; }
+	public void setIdSeparator(String idSeparator) { this.idSeparator = idSeparator; }
+	
 	// -------------------------------------------- //
 	// CONSTRUCT
 	// -------------------------------------------- //
@@ -51,7 +90,7 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 	public TypeCombined(Type<?>... innerTypes)
 	{
 		this.setInnerTypes(innerTypes);
-		this.setSeparators(", ");
+		this.setSeparators(SEPARATORS_DEFAULT);
 	}
 	
 	// -------------------------------------------- //
@@ -63,13 +102,13 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 	public abstract List<Object> split(T value);
 	
 	// -------------------------------------------- //
-	// METHODS
+	// SPLIT ENTRIES
 	// -------------------------------------------- //
 	
 	public List<Entry<Type<?>, Object>> splitEntries(T value)
 	{
 		// Create
-		List<Entry<Type<?>, Object>> ret = new MassiveList<Entry<Type<?>, Object>>();
+		List<Entry<Type<?>, Object>> ret = new MassiveList<>();
 		
 		// Fill
 		List<?> parts = this.split(value);
@@ -87,11 +126,69 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 	}
 	
 	// -------------------------------------------- //
+	// SPLIT ENTRIES USER
+	// -------------------------------------------- //
+	// This entire section was made to handle the problem that the visual should contain what is nulled in user order.
+	// Just because we don't want it when we read arguments in commands does not mean we can omit it from the visual.
+	// The better and abstracted solution (that I skipped) would be to have multiple custom orders.
+	// One for command parameters.
+	// One for visuals.
+	// TODO: Implement such an abstraction.
+	// TODO: The current hack assumes we want all in the visuals. That may not be true.
+	
+	public List<Entry<Type<?>, Object>> splitEntriesUser(T value)
+	{
+		// Create
+		List<Entry<Type<?>, Object>> ret = new MassiveList<>();
+		
+		// Fill
+		List<Entry<Type<?>, Object>> tech = this.splitEntries(value);
+		for (int i : this.getUserOrderAugmented())
+		{
+			ret.add(tech.get(i));
+		}
+		
+		// Return
+		return ret;
+	}
+	
+	public List<Integer> getUserOrderAugmented()
+	{
+		// Create
+		List<Integer> ret = new MassiveList<>(this.getUserOrder());
+		
+		// Fill
+		for (int indexTech = 0; indexTech < this.getInnerTypes().size(); indexTech++)
+		{
+			if (ret.contains(indexTech)) continue;
+			addSorted(ret, indexTech);
+		}
+		
+		// Return
+		return ret;
+	}
+	
+	private static void addSorted(List<Integer> list, Integer element)
+	{
+		for (int index = 0; index < list.size(); index++)
+		{
+			Integer current = list.get(index);
+			Integer next = (index + 1 < list.size() ? list.get(index + 1) : null);
+			if ((element <= current) && (next == null || element >= next))
+			{
+				list.add(index, element);
+				return;
+			}
+		}
+		list.add(element);
+	}
+	
+	// -------------------------------------------- //
 	// META
 	// -------------------------------------------- //
 	
 	@Override
-	public String getTypeName()
+	public String getName()
 	{
 		// Create
 		List<String> parts = new MassiveList<String>();
@@ -99,34 +196,59 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 		// Fill
 		for (Type<?> type : this.getInnerTypes())
 		{
-			parts.add(type.getTypeName());
+			parts.add(type.getName());
 		}
 		
 		// Return
-		return Txt.implode(parts, " ");
+		return Txt.implode(parts, this.getTypeNameSeparator());
 	}
 	
 	// -------------------------------------------- //
-	// WRITE VISUAL
+	// WRITE VISUAL MSON
 	// -------------------------------------------- //
 	
+	@SuppressWarnings("unchecked")
 	@Override
-	public String getVisualInner(T value, CommandSender sender)
+	public Mson getVisualMsonInner(T value, CommandSender sender)
 	{
 		// Create
-		List<String> parts = new MassiveList<String>();
+		List<Mson> parts = new MassiveList<>();
 		
 		// Fill
-		for (Entry<Type<?>, Object> entry : this.splitEntries(value))
+		for (Entry<Type<?>, Object> entry : this.splitEntriesUser(value))
 		{
-			@SuppressWarnings("unchecked")
 			Type<Object> type = (Type<Object>) entry.getKey();
-			String part = type.getVisual(entry.getValue(), sender);
+			Mson part = type.getVisualMson(entry.getValue(), sender);
+			if ( ! this.isVisualMsonNullIncluded() && part == null) continue;
 			parts.add(part);
 		}
 		
 		// Return
-		return Txt.implode(parts, " ");
+		return Mson.implode(parts, this.getVisualMsonSeparator());
+	}
+
+	// -------------------------------------------- //
+	// WRITE VISUAL
+	// -------------------------------------------- //
+	
+	@SuppressWarnings("unchecked")
+	@Override
+	public String getVisualInner(T value, CommandSender sender)
+	{
+		// Create
+		List<String> parts = new MassiveList<>();
+		
+		// Fill
+		for (Entry<Type<?>, Object> entry : this.splitEntriesUser(value))
+		{
+			Type<Object> type = (Type<Object>) entry.getKey();
+			String part = type.getVisual(entry.getValue(), sender);
+			if ( ! this.isVisualNullIncluded() && part == null) continue;
+			parts.add(part);
+		}
+		
+		// Return
+		return Txt.implode(parts, this.getVisualSeparator());
 	}
 
 	// -------------------------------------------- //
@@ -137,7 +259,7 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 	public String getNameInner(T value)
 	{
 		// Create
-		List<String> parts = new MassiveList<String>();
+		List<String> parts = new MassiveList<>();
 		
 		// Fill
 		for (Entry<Type<?>, Object> entry : this.splitEntries(value))
@@ -145,11 +267,12 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 			@SuppressWarnings("unchecked")
 			Type<Object> type = (Type<Object>) entry.getKey();
 			String part = type.getName(entry.getValue());
+			if ( ! this.isNameNullIncluded() && part == null) continue;
 			parts.add(part);
 		}
 		
 		// Return
-		return Txt.implode(parts, " ");
+		return Txt.implode(parts, this.getNameSeparator());
 	}
 
 	// -------------------------------------------- //
@@ -160,7 +283,7 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 	public String getIdInner(T value)
 	{
 		// Create
-		List<String> parts = new MassiveList<String>();
+		List<String> parts = new MassiveList<>();
 		
 		// Fill
 		for (Entry<Type<?>, Object> entry : this.splitEntries(value))
@@ -168,11 +291,12 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 			@SuppressWarnings("unchecked")
 			Type<Object> type = (Type<Object>) entry.getKey();
 			String part = type.getId(entry.getValue());
+			if ( ! this.isIdNullIncluded() && part == null) continue;
 			parts.add(part);
 		}
 		
 		// Return
-		return Txt.implode(parts, " ");
+		return Txt.implode(parts, this.getIdSeparator());
 	}
 
 	// -------------------------------------------- //
@@ -194,12 +318,12 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 		// Fill
 		List<String> innerArgs = this.getArgs(arg);
 		
-		if (innerArgs.size() > this.getInnerTypes().size()) throw new MassiveException().addMsg("<b>Too many arguments!");
+		if (innerArgs.size() > this.getInnerTypes().size()) throw new MassiveException().addMsg("<b>Too many arguments.");
 		
 		for (int i = 0; i < innerArgs.size(); i++)
 		{
 			String innerArg = innerArgs.get(i);
-			Type<?> innerType = this.getInnerTypes().get(i);
+			Type<?> innerType = this.getInnerTypes().get(getIndexUser(i));
 			Object part = innerType.read(innerArg, sender);
 			ret.add(part);
 		}
@@ -255,7 +379,23 @@ public abstract class TypeCombined<T> extends TypeAbstract<T>
 		List<String> args = this.getArgs(string);
 		if (args.isEmpty()) return null;
 		if (args.size() > this.getInnerTypes().size()) return null;
-		return this.getInnerType(args.size() - 1);
+		return this.getInnerType(getIndexTech(args.size() - 1));
+	}
+	
+	// -------------------------------------------- //
+	// UTIL
+	// -------------------------------------------- //
+	
+	public static Pattern buildSeparatorsPattern(String separators)
+	{
+		StringBuilder regex = new StringBuilder();
+		regex.append("[");
+		for (char c : separators.toCharArray())
+		{
+			regex.append(Pattern.quote(String.valueOf(c)));
+		}
+		regex.append("]+");
+		return Pattern.compile(regex.toString());
 	}
 
 }

@@ -9,9 +9,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Set;
+
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 
+import com.massivecraft.massivecore.Colorized;
+import com.massivecraft.massivecore.Identified;
 import com.massivecraft.massivecore.MassiveException;
 import com.massivecraft.massivecore.Named;
 import com.massivecraft.massivecore.collections.MassiveList;
@@ -20,9 +23,11 @@ import com.massivecraft.massivecore.command.editor.CommandEditSimple;
 import com.massivecraft.massivecore.command.editor.EditSettings;
 import com.massivecraft.massivecore.command.editor.Property;
 import com.massivecraft.massivecore.comparator.ComparatorHashCode;
-import com.massivecraft.massivecore.store.Entity;
+import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.store.SenderEntity;
 import com.massivecraft.massivecore.util.ContainerUtil;
+import com.massivecraft.massivecore.util.MUtil;
+import com.massivecraft.massivecore.util.ReflectionUtil;
 import com.massivecraft.massivecore.util.Txt;
 
 public abstract class TypeAbstract<T> implements Type<T>
@@ -35,15 +40,21 @@ public abstract class TypeAbstract<T> implements Type<T>
 	public static final String EMPTY = Txt.parse("<silver><em>EMPTY");
 	public static final String UNKNOWN = Txt.parse("<b>???");
 	
+	public static final Mson MSON_NULL = Mson.fromParsedMessage(NULL);
+	public static final Mson MSON_EMPTY = Mson.fromParsedMessage(EMPTY);
+	public static final Mson MSON_UNKNOWN = Mson.fromParsedMessage(UNKNOWN);
+	
 	public static final ChatColor COLOR_DEFAULT = ChatColor.YELLOW;
 	public static final ChatColor COLOR_NUMBER = ChatColor.LIGHT_PURPLE;
+	
+	public static final int TAB_LIST_UUID_THRESHOLD = 5;
 	
 	// -------------------------------------------- //
 	// META
 	// -------------------------------------------- //
 	
 	@Override
-	public String getTypeName()
+	public String getName()
 	{
 		int prefixLength = "Type".length();
 		String name = this.getClass().getSimpleName();
@@ -63,38 +74,106 @@ public abstract class TypeAbstract<T> implements Type<T>
 	protected List<Type<?>> innerTypes = new MassiveList<>();
 	
 	@SuppressWarnings("unchecked")
-	public <I extends Type<?>> List<I> getInnerTypes() { return (List<I>) this.innerTypes; }
+	@Override public <I extends Type<?>> List<I> getInnerTypes() { return (List<I>) this.innerTypes; }
 	@SuppressWarnings("unchecked")
-	public <I extends Type<?>> I getInnerType(int index) { return (I) this.getInnerTypes().get(index); }
-	public <I extends Type<?>> I getInnerType() { return this.getInnerType(0); }
+	@Override public <I extends Type<?>> I getInnerType(int index) { return (I) this.getInnerTypes().get(index); }
+	@Override public <I extends Type<?>> I getInnerType() { return this.getInnerType(0); }
 	
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	public void setInnerTypes(Collection<Type<?>> innerTypes) { this.innerTypes = new MassiveList(innerTypes); }
-	public void setInnerTypes(Type<?>... innerTypes) { this.setInnerTypes(Arrays.asList(innerTypes)); };
-	public void setInnerType(Type<?> innerType) { this.setInnerTypes(innerType); }
+	@Override public void setInnerTypes(Collection<Type<?>> innerTypes) { this.innerTypes = new MassiveList(innerTypes); }
+	@Override public void setInnerTypes(Type<?>... innerTypes) { this.setInnerTypes(Arrays.asList(innerTypes)); };
+	@Override public void setInnerType(Type<?> innerType) { this.setInnerTypes(innerType); }
+	
+	private List<Integer> userOrder = null;
+	@Override public void setUserOrder(List<Integer> userOrder) { this.userOrder = userOrder; }
+	@Override public void setUserOrder(Integer... userOrder) { this.setUserOrder(Arrays.asList(userOrder)); }
+	@Override public List<Integer> getUserOrder()
+	{
+		if (this.userOrder == null)
+		{
+			this.userOrder = MUtil.range(0, this.getInnerTypes().size());
+		}
+		return this.userOrder;
+	}
+	@Override
+	public Integer getIndexUser(int indexTechy)
+	{
+		if (this.userOrder == null) return indexTechy;
+		Integer ret = this.userOrder.indexOf(indexTechy);
+		if (ret.equals(-1)) return null;
+		return ret;
+	}
+	@Override
+	public Integer getIndexTech(int indexUser)
+	{
+		if (this.userOrder == null) return indexUser;
+		return this.userOrder.get(indexUser);
+	}
 	
 	// -------------------------------------------- //
 	// WRITE VISUAL COLOR
 	// -------------------------------------------- //
 	
 	protected ChatColor visualColor = COLOR_DEFAULT;
+	@Override
 	public void setVisualColor(ChatColor color)
 	{
 		this.visualColor = color;
 	}
+	@Override
 	public ChatColor getVisualColor(T value, CommandSender sender)
 	{
+		if (value instanceof Colorized)
+		{
+			Colorized colorized = (Colorized) value;
+			return colorized.getColor();
+		}
 		return this.visualColor;
 	}
+	@Override
 	public ChatColor getVisualColor(T value)
 	{
 		return this.getVisualColor(value, null);
 	}
 	
 	// -------------------------------------------- //
+	// WRITE VISUAL MSON
+	// -------------------------------------------- //
+	// A visual mson.
+	
+	protected boolean visualMsonOverridden = calcVisualMsonOverridden();
+	public boolean isVisualMsonOverridden() { return this.visualMsonOverridden; }
+	public void setVisualMsonOverridden(boolean visualMsonOverridden) { this.visualMsonOverridden = visualMsonOverridden; }
+	public boolean calcVisualMsonOverridden()
+	{
+		return ! TypeAbstract.class.equals(ReflectionUtil.getSuperclassDeclaringMethod(this.getClass(), true, "getVisualMsonInner"));
+	}
+	
+	@Override
+	public Mson getVisualMsonInner(T value, CommandSender sender)
+	{
+		String visualInner = this.getVisualInner(value, sender);
+		if (visualInner == null) MUtil.stackTraceDebug("visualInner null for + " + value);
+		return Mson.fromParsedMessage(visualInner);
+	}
+	
+	@Override
+	public Mson getVisualMson(T value, CommandSender sender)
+	{
+		if (value == null) return MSON_NULL;
+		return this.getVisualMsonInner(value, sender);
+	}
+	@Override
+	public Mson getVisualMson(T value)
+	{
+		return this.getVisualMson(value, null);
+	}
+	
+	// -------------------------------------------- //
 	// WRITE VISUAL
 	// -------------------------------------------- //
 	
+	@Override
 	public String getVisualInner(T value, CommandSender sender)
 	{
 		if (value instanceof SenderEntity<?>)
@@ -103,47 +182,33 @@ public abstract class TypeAbstract<T> implements Type<T>
 			String ret = senderEntity.getDisplayName(sender);
 			return ret == null ? NULL : ret;
 		}
-		
-		return this.getVisualColor(value, sender) + this.getNameInner(value);
+		if (this.isVisualMsonOverridden())
+		{
+			return this.getVisualMsonInner(value, sender).toPlain(true);
+		}
+		else
+		{
+			return this.getVisualColor(value, sender) + this.getNameInner(value);	
+		}
 	}
-	public String getVisualInner(T value)
-	{
-		return this.getVisualInner(value, null);
-	}
-	
+
+	@Override
 	public String getVisual(T value, CommandSender sender)
 	{
 		if (value == null) return NULL;
 		return this.getVisualInner(value, sender);
 	}
+	@Override
 	public String getVisual(T value)
 	{
 		return this.getVisual(value, null);
 	}
-	
-	public Set<String> getVisualsInner(T value, CommandSender sender)
-	{
-		return Collections.singleton(this.getVisualInner(value, sender));
-	}
-	public Set<String> getVisualsInner(T value)
-	{
-		return this.getVisualsInner(value, null);
-	}
-	
-	public Set<String> getVisuals(T value, CommandSender sender)
-	{
-		if (value == null) return Collections.singleton(NULL);
-		return this.getVisualsInner(value, sender);
-	}
-	public Set<String> getVisuals(T value)
-	{
-		return this.getVisuals(value, null);
-	}
-	
+
 	// -------------------------------------------- //
 	// WRITE NAME
 	// -------------------------------------------- //
 	
+	@Override
 	public String getNameInner(T value)
 	{
 		if (value instanceof Named)
@@ -155,17 +220,20 @@ public abstract class TypeAbstract<T> implements Type<T>
 		return this.getIdInner(value);
 	}
 	
+	@Override
 	public String getName(T value)
 	{
 		if (value == null) return null;
 		return this.getNameInner(value);
 	}
 	
+	@Override
 	public Set<String> getNamesInner(T value)
 	{
 		return Collections.singleton(this.getNameInner(value));
 	}
 	
+	@Override
 	public Set<String> getNames(T value)
 	{
 		if (value == null) return Collections.emptySet();
@@ -176,12 +244,13 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// WRITE ID
 	// -------------------------------------------- //
 	
+	@Override
 	public String getIdInner(T value)
 	{
-		if (value instanceof Entity)
+		if (value instanceof Identified)
 		{
-			Entity<?> entity = (Entity<?>)value;
-			return entity.getId();
+			Identified identified = (Identified)value;
+			return identified.getId();
 		}
 		else if (value instanceof String || value instanceof Number || value instanceof Boolean)
 		{
@@ -191,17 +260,20 @@ public abstract class TypeAbstract<T> implements Type<T>
 		return null;
 	}
 	
+	@Override
 	public String getId(T value)
 	{
 		if (value == null) return null;
 		return this.getIdInner(value);
 	}
 	
+	@Override
 	public Set<String> getIdsInner(T value)
 	{
 		return Collections.singleton(this.getIdInner(value));
 	}
 	
+	@Override
 	public Set<String> getIds(T value)
 	{
 		if (value == null) return Collections.emptySet();
@@ -212,16 +284,19 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// READ
 	// -------------------------------------------- //
 	
+	@Override
 	public T read(CommandSender sender) throws MassiveException
 	{
 		return this.read(null, sender);
 	}
 
+	@Override
 	public T read(String arg) throws MassiveException
 	{
 		return this.read(arg, null);
 	}
 
+	@Override
 	public T read() throws MassiveException
 	{
 		return this.read(null, null);
@@ -231,6 +306,7 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// VALID
 	// -------------------------------------------- //
 	
+	@Override
 	public boolean isValid(String arg, CommandSender sender)
 	{
 		try
@@ -248,11 +324,13 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// TAB LIST
 	// -------------------------------------------- //
 
+	@Override
 	public boolean allowSpaceAfterTab()
 	{
 		return true;
 	}
 	
+	@Override
 	public List<String> getTabListFiltered(CommandSender sender, String arg)
 	{
 		// Get the raw tab list.
@@ -400,22 +478,22 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// -------------------------------------------- //
 	
 	private Boolean container = null;
-	public boolean isContainer() { this.calcContainer(); return this.container; }
+	@Override public boolean isContainer() { this.calcContainer(); return this.container; }
 	
 	private Boolean containerMap = null;
-	public boolean isContainerMap() { this.calcContainer(); return this.containerMap; }
+	@Override public boolean isContainerMap() { this.calcContainer(); return this.containerMap; }
 	
 	private Boolean containerCollection = null;
-	public boolean isContainerCollection() { this.calcContainer(); return this.containerCollection; }
+	@Override public boolean isContainerCollection() { this.calcContainer(); return this.containerCollection; }
 	
 	private Boolean containerIndexed = null;
-	public boolean isContainerIndexed() { this.calcContainer(); return this.containerIndexed; }
+	@Override public boolean isContainerIndexed() { this.calcContainer(); return this.containerIndexed; }
 	
 	private Boolean containerOrdered = null;
-	public boolean isContainerOrdered() { this.calcContainer(); return this.containerOrdered; }
+	@Override public boolean isContainerOrdered() { this.calcContainer(); return this.containerOrdered; }
 	
 	private Boolean containerSorted = null;
-	public boolean isContainerSorted() { this.calcContainer(); return this.containerSorted; }
+	@Override public boolean isContainerSorted() { this.calcContainer(); return this.containerSorted; }
 	
 	private void calcContainer()
 	{
@@ -435,6 +513,7 @@ public abstract class TypeAbstract<T> implements Type<T>
 	
 	private Comparator<Object> elementComparator = null;
 	@SuppressWarnings("unchecked")
+	@Override
 	public <E> Comparator<E> getContainerComparator()
 	{
 		if (this.elementComparator != null) return (Comparator<E>) this.elementComparator;
@@ -442,8 +521,10 @@ public abstract class TypeAbstract<T> implements Type<T>
 		return (Comparator<E>) ComparatorHashCode.get().getLenient();
 	}
 	@SuppressWarnings("unchecked")
+	@Override
 	public void setContainerComparator(Comparator<?> comparator) { this.elementComparator = (Comparator<Object>) comparator; }
 	
+	@Override
 	public <E> List<E> getContainerElementsOrdered(Iterable<E> elements)
 	{
 		if (elements == null) return null;
@@ -479,6 +560,7 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// EQUALS
 	// -------------------------------------------- //
 	
+	@Override
 	public boolean equals(T type1, T type2)
 	{
 		if (type1 == null) return type2 == null;
@@ -486,6 +568,7 @@ public abstract class TypeAbstract<T> implements Type<T>
 		return this.equalsInner(type1, type2);
 	}
 	
+	@Override 
 	public boolean equalsInner(T type1, T type2)
 	{
 		return type1.equals(type2);
@@ -495,11 +578,13 @@ public abstract class TypeAbstract<T> implements Type<T>
 	// EDITOR
 	// -------------------------------------------- //
 	
+	@Override 
 	public <O> CommandEditAbstract<O, T> createEditCommand(EditSettings<O> settings, Property<O, T> property)
 	{
 		return new CommandEditSimple<O, T>(settings, property);
 	}
 	
+	@Override
 	public T createNewInstance()
 	{
 		return null;

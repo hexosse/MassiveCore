@@ -3,6 +3,7 @@ package com.massivecraft.massivecore.command.editor;
 import java.util.List;
 import java.util.Map.Entry;
 
+import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.permissions.Permission;
 
@@ -13,6 +14,7 @@ import com.massivecraft.massivecore.command.requirement.RequirementEditorUse;
 import com.massivecraft.massivecore.command.requirement.RequirementHasPerm;
 import com.massivecraft.massivecore.command.type.Type;
 import com.massivecraft.massivecore.event.EventMassiveCoreEditorEdit;
+import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.util.PermUtil;
 import com.massivecraft.massivecore.util.Txt;
 
@@ -118,40 +120,65 @@ public class CommandEditAbstract<O, V> extends MassiveCommand
 		if (event.isCancelled()) return;
 		after = event.getAfter();
 		
-		// Setup
-		String descProperty = this.getProperty().getDisplayName();
-		String descObject = this.getObjectVisual();
-		String descValue = this.getInheritedVisual(source, before);
-		
 		// NoChange
 		// We check, inform and cancel on equality.
 		if (this.getValueType().equals(before, after))
 		{
-			msg("%s<silver> for %s<silver> already: %s", descProperty, descObject, descValue);
+			message(this.attemptSetNochangeMessage());
 			return;
 		}
+		this.attemptSetPerform(after);
+	}
+	
+	protected Mson attemptSetNochangeMessage()
+	{
+		return mson(
+			this.getProperty().getDisplayNameMson(),
+			" for ",
+			this.getObjectVisual(),
+			" already: ",	
+			this.getInheritedVisual()
+			).color(ChatColor.GRAY);
+	}
+	
+	protected void attemptSetPerform(V after)
+	{
+		String descProperty = this.getProperty().getDisplayName();
+		Mson descObject = this.getObjectVisual();
+		Mson descValue = this.getInheritedVisual();
 		
 		// Create messages
-		List<String> messages = new MassiveList<>();
+		List<Mson> messages = new MassiveList<>();
 
 		// Before
 		// We inform what the value was before.
-		messages.add(Txt.parse("<k>Before: %s", descValue));
+		messages.add(mson(
+			mson("Before: ").color(ChatColor.AQUA),
+			descValue
+			));
 
 		// Apply
 		// We set the new property value.
-		this.getProperty().setValue(this.getObject(), after);
+		this.getProperty().setValue(sender, this.getObject(), after);
 
 		// After
 		// We inform what the value is after.
 		descValue = this.getInheritedVisual();
-		messages.add(Txt.parse("<k>After: %s", descValue));
+		messages.add(mson(
+			mson("After: ").color(ChatColor.AQUA),
+			descValue
+			));
 		
 		// Startup
 		// We inform what property and object the edit is taking place on.
 		// The visual might change after modification, so this should be added after we have made the change.
 		descObject = this.getObjectVisual();
-		messages.add(0, Txt.parse("%s<silver> for %s<silver> edited:", descProperty, descObject));
+		messages.add(0, mson(
+			descProperty,
+			" for ",
+			descObject,
+			" edited:"
+			).color(ChatColor.GRAY));
 		
 		message(messages);
 	}
@@ -185,9 +212,9 @@ public class CommandEditAbstract<O, V> extends MassiveCommand
 		return this.getSettings().getUsedPermission();
 	}
 	
-	public String getObjectVisual()
+	public Mson getObjectVisual()
 	{
-		return this.getObjectType().getVisual(this.getObject(), sender);
+		return this.getObjectType().getVisualMson(this.getObject(), sender);
 	}
 	
 	// -------------------------------------------- //
@@ -219,7 +246,7 @@ public class CommandEditAbstract<O, V> extends MassiveCommand
 	
 	public V setValue(V value)
 	{
-		return this.getProperty().setValue(this.getObject(), value);
+		return this.getProperty().setValue(sender, this.getObject(), value);
 	}
 	
 	public Entry<O, V> getInheritedEntry()
@@ -237,12 +264,12 @@ public class CommandEditAbstract<O, V> extends MassiveCommand
 		return this.getProperty().getInheritedValue(this.getObject());
 	}
 	
-	public String getInheritedVisual(O source, V value)
+	public Mson getInheritedVisual(O source, V value)
 	{
 		return this.getProperty().getInheritedVisual(this.getObject(), source, value, sender);
 	}
 	
-	public String getInheritedVisual()
+	public Mson getInheritedVisual()
 	{
 		return this.getProperty().getInheritedVisual(this.getObject(), sender);
 	}
@@ -271,12 +298,36 @@ public class CommandEditAbstract<O, V> extends MassiveCommand
 		return alias;
 	}
 	
-	public void show(CommandSender sender)
+	public void show(int page)
 	{
-		String descProperty = this.getProperty().getDisplayName();
-		String descObject = this.getObjectVisual();
-		String descValue = this.getInheritedVisual();
-		msg("%s<silver> for %s<silver>: %s", descProperty, descObject, descValue);
+		Mson descValue = this.getInheritedVisual();
+		
+		// For things with line breaks.
+		if (descValue.contains("\n"))
+		{
+			Mson title = mson(
+				this.getProperty().getDisplayNameMson(),
+				" for ",
+				this.getObjectVisual()
+			);
+			List<Mson> lines = descValue.split(Txt.PATTERN_NEWLINE);
+			
+			message(Txt.getPage(lines, page, title, this));
+		}
+		// Others
+		else
+		{
+			Mson descProperty = this.getProperty().getDisplayNameMson();
+			Mson descObject = this.getObjectVisual();
+			
+			message(mson(
+				descProperty,
+				" for ",
+				descObject,
+				": ",
+				descValue
+			).color(ChatColor.GRAY));			
+		}
 	}
 	
 	public void requireNullable() throws MassiveException

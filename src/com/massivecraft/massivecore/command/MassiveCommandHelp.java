@@ -3,6 +3,7 @@ package com.massivecraft.massivecore.command;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
@@ -10,15 +11,15 @@ import com.massivecraft.massivecore.MassiveException;
 import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.util.Txt;
 
-public class HelpCommand extends MassiveCommand
+public class MassiveCommandHelp extends MassiveCommand
 {
 	// -------------------------------------------- //
 	// INSTANCE & CONSTRUCT
 	// -------------------------------------------- //
 	
-	protected static HelpCommand i = new HelpCommand();
-	public static HelpCommand get() { return i; }
-	private HelpCommand()
+	protected static MassiveCommandHelp i = new MassiveCommandHelp();
+	public static MassiveCommandHelp get() { return i; }
+	private MassiveCommandHelp()
 	{
 		// Aliases
 		this.addAliases("?", "h", "help");
@@ -46,9 +47,9 @@ public class HelpCommand extends MassiveCommand
 		
 		// Create Lines
 		List<Mson> lines = new ArrayList<Mson>();
-		for (String helpline : parent.getHelp())
+		for (Object helpline : parent.getHelp())
 		{
-			lines.add(Mson.parse("<a>#<i> " + helpline));
+			lines.add(mson(Mson.parse("<a># "), helpline).color(ChatColor.YELLOW));
 		}
 		
 		for (MassiveCommand child : parent.getChildren())
@@ -67,10 +68,15 @@ public class HelpCommand extends MassiveCommand
 		boolean visible = super.isVisibleTo(sender);
 		if ( ! (this.hasParent() && visible)) return visible;
 		
-		int pageHeight = (sender instanceof Player) ? Txt.PAGEHEIGHT_PLAYER : Txt.PAGEHEIGHT_CONSOLE;
-		int size = this.getParent().getChildren().size();
+		int visibleSiblingCount = 0;
+		for (MassiveCommand sibling : this.getParent().getChildren())
+		{
+			if (sibling == this) continue;
+			if (sibling.isVisibleTo(sender)) visibleSiblingCount++;
+		}
 		
-		if (size <= pageHeight)
+		int pageHeight = (sender instanceof Player) ? Txt.PAGEHEIGHT_PLAYER : Txt.PAGEHEIGHT_CONSOLE;
+		if (visibleSiblingCount <= pageHeight)
 		{
 			return false;
 		}

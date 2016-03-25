@@ -16,14 +16,9 @@ public class ComparatorHashCode extends ComparatorAbstract<Object>
 	// -------------------------------------------- //
 
 	@Override
-	public int compareInner(Object object1, Object object2)
+	public Integer compareInner(Object object1, Object object2)
 	{
-		int ret;
-		
-		ret = Integer.compare(Objects.hashCode(object1), Objects.hashCode(object2));
-		if (ret != 0) return ret;
-		
-		return ret; 
+		return Integer.compare(Objects.hashCode(object1), Objects.hashCode(object2));
 	}
 
 }

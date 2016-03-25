@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
+import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 
 import com.massivecraft.massivecore.MassiveException;
@@ -14,6 +15,7 @@ import com.massivecraft.massivecore.command.editor.EditSettings;
 import com.massivecraft.massivecore.command.editor.Property;
 import com.massivecraft.massivecore.command.type.Type;
 import com.massivecraft.massivecore.command.type.TypeAbstract;
+import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.util.ContainerUtil;
 import com.massivecraft.massivecore.util.Txt;
 
@@ -33,14 +35,46 @@ public abstract class TypeContainer<C extends Object, E> extends TypeAbstract<C>
 	// -------------------------------------------- //
 	
 	@Override
-	public String getTypeName()
+	public String getName()
 	{
-		return this.getCollectionTypeName() + " of " + this.getInnerType().getTypeName();
+		return this.getCollectionTypeName() + " of " + this.getInnerType().getName();
 	}
 	
 	public String getCollectionTypeName()
 	{
-		return super.getTypeName();
+		return super.getName();
+	}
+	
+	// -------------------------------------------- //
+	// WRITE VISUAL
+	// -------------------------------------------- //
+	
+	@Override
+	public Mson getVisualMsonInner(C container, CommandSender sender)
+	{
+		// Empty
+		if (ContainerUtil.isEmpty(container)) return MSON_EMPTY;
+		
+		// Create
+		List<Mson> parts = new MassiveList<>();
+		
+		// Fill
+		List<E> elements = this.getContainerElementsOrdered(container);
+		Type<E> innerType = this.getInnerType();
+		int index = -1;
+		for (E element : elements)
+		{
+			index++;
+			Mson part = Mson.mson(
+				Mson.mson(String.valueOf(index)).color(ChatColor.WHITE),
+				Mson.SPACE,
+				innerType.getVisualMson(element, sender)
+			);
+			parts.add(part);
+		}
+		
+		// Return
+		return Mson.implode(parts, Mson.mson("\n"));
 	}
 	
 	// -------------------------------------------- //
@@ -54,7 +88,7 @@ public abstract class TypeContainer<C extends Object, E> extends TypeAbstract<C>
 		if (ContainerUtil.isEmpty(container)) return EMPTY;
 		
 		// Create
-		List<String> parts = new MassiveList<String>();
+		List<String> parts = new MassiveList<>();
 		
 		// Fill
 		List<E> elements = this.getContainerElementsOrdered(container);
@@ -63,7 +97,7 @@ public abstract class TypeContainer<C extends Object, E> extends TypeAbstract<C>
 		for (E element : elements)
 		{
 			index++;
-			String part = Txt.parse("<white>%d <yellow>%s", index, innerType.getVisualInner(element, sender));
+			String part = Txt.parse("<white>%d <yellow>%s", index, innerType.getVisual(element, sender));
 			parts.add(part);
 		}
 		
@@ -82,14 +116,14 @@ public abstract class TypeContainer<C extends Object, E> extends TypeAbstract<C>
 		if (ContainerUtil.isEmpty(container)) return "";
 		
 		// Create
-		List<String> parts = new MassiveList<String>();
+		List<String> parts = new MassiveList<>();
 		
 		// Fill
 		List<E> elements = this.getContainerElementsOrdered(container);
 		Type<E> innerType = this.getInnerType();
 		for (E element : elements)
 		{
-			String part = innerType.getNameInner(element);
+			String part = innerType.getName(element);
 			parts.add(part);
 		}
 		
@@ -108,14 +142,14 @@ public abstract class TypeContainer<C extends Object, E> extends TypeAbstract<C>
 		if (ContainerUtil.isEmpty(container)) return "";
 		
 		// Create
-		List<String> parts = new MassiveList<String>();
+		List<String> parts = new MassiveList<>();
 		
 		// Fill
 		Type<E> innerType = this.getInnerType();
 		List<E> elements = this.getContainerElementsOrdered(container);
 		for (E element : elements)
 		{
-			String part = innerType.getIdInner(element);
+			String part = innerType.getId(element);
 			parts.add(part);
 		}
 		

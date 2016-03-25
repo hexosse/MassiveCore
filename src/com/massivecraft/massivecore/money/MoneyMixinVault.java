@@ -71,13 +71,14 @@ public class MoneyMixinVault extends MoneyMixinAbstract
 		else
 		{
 			int fractionalDigits = this.fractionalDigits();
+			amount = prepare(amount);
 			if (fractionalDigits < 0)
 			{
 				return String.valueOf(amount);
 			}
 			else if (fractionalDigits == 0)
 			{
-				return String.valueOf((int)Math.round(amount));
+				return String.valueOf((int)amount);
 			}
 			else
 			{
@@ -147,7 +148,7 @@ public class MoneyMixinVault extends MoneyMixinAbstract
 	// -------------------------------------------- //
 	
 	@Override
-	public boolean move(String fromId, String toId, String byId, double amount, Collection<String> categories, String message)
+	public boolean move(String fromId, String toId, String byId, double amount, Collection<String> categories, Object message)
 	{
 		Economy economy = this.getEconomy();
 		

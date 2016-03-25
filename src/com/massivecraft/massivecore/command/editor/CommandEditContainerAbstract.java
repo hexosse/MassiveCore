@@ -1,12 +1,19 @@
 package com.massivecraft.massivecore.command.editor;
 
 import java.util.AbstractMap.SimpleImmutableEntry;
+
+import org.bukkit.ChatColor;
+
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 
 import com.massivecraft.massivecore.MassiveException;
+import com.massivecraft.massivecore.collections.MassiveList;
 import com.massivecraft.massivecore.command.requirement.RequirementEditorPropertyCreated;
 import com.massivecraft.massivecore.command.type.Type;
 import com.massivecraft.massivecore.command.type.TypeNullable;
+import com.massivecraft.massivecore.mson.Mson;
 import com.massivecraft.massivecore.util.ContainerUtil;
 import com.massivecraft.massivecore.util.Txt;
 
@@ -40,13 +47,18 @@ public abstract class CommandEditContainerAbstract<O, V> extends CommandEditAbst
 	public void perform() throws MassiveException
 	{
 		// Create
-		V container = this.getProperty().getRaw(this.getObject());
-		List<Object> elements = this.getValueType().getContainerElementsOrdered(container);
+		V before = this.getProperty().getRaw(this.getObject());
+		
+		// We must use a container of the correct type.
+		// Otherwise the elements list for maps,
+		// could have two entries with the same key.
+		// That obviously caused issues.
+		V container = ContainerUtil.getCopy(before);
 		
 		// Alter
 		try
 		{
-			this.alter(elements);
+			this.alter(container);
 		}
 		catch (MassiveException e)
 		{
@@ -58,8 +70,8 @@ public abstract class CommandEditContainerAbstract<O, V> extends CommandEditAbst
 		}
 		
 		// After
-		elements = this.getValueType().getContainerElementsOrdered(elements);
 		V after = this.getValueType().createNewInstance();
+		List<Object> elements = this.getValueType().getContainerElementsOrdered(container);
 		ContainerUtil.addElements(after, elements);
 		
 		// Apply
@@ -79,10 +91,76 @@ public abstract class CommandEditContainerAbstract<O, V> extends CommandEditAbst
 	}
 	
 	// -------------------------------------------- //
-	// ABSTRACT
+	// ATTEMPT SET
 	// -------------------------------------------- //
 	
-	public abstract void alter(List<Object> elements) throws MassiveException;
+	@Override
+	public Mson attemptSetNochangeMessage()
+	{
+		return mson(
+			this.getProperty().getDisplayNameMson(),
+			" for ",
+			this.getObjectVisual(),
+			" not changed."	
+		).color(ChatColor.GRAY);
+	}
+	
+	@SuppressWarnings("unchecked")
+	@Override
+	public void attemptSetPerform(V after)
+	{
+		V before = this.getInheritedValue();
+		Mson descProperty = this.getProperty().getDisplayNameMson();
+		
+		// Apply
+		// We set the new property value.
+		this.getProperty().setValue(sender, this.getObject(), after);
+		
+		// Create messages
+		List<Mson> messages = new MassiveList<>();
+		
+		messages.add(mson(
+			descProperty,
+			mson(" for ").color(ChatColor.GRAY),
+			this.getObjectVisual(),
+			mson(" edited:").color(ChatColor.GRAY)
+		));
+		
+		// Note: The result of getAdditions is not actually V, but the implementation doesn't care.
+		Collection<Object> additions = ContainerUtil.getAdditions(before, after);
+		if ( ! additions.isEmpty())
+		{
+			messages.add(Mson.prepondfix(mson("Additions: ").color(ChatColor.AQUA), this.getValueType().getVisualMson((V) additions, sender), null));
+		}
+		
+		// Note: The result of getDeletions is not actually V, but the implementation doesn't care.
+		Collection<Object> deletions = ContainerUtil.getDeletions(before, after);
+		if ( ! deletions.isEmpty())
+		{
+			messages.add(Mson.prepondfix(mson("Deletions: ").color(ChatColor.AQUA), this.getValueType().getVisualMson((V) deletions, sender), null));
+		}
+		
+		message(messages);
+	}
+	
+	// -------------------------------------------- //
+	// ABSTRACT
+	// -------------------------------------------- //
+	// Not actually abstract, but one of these must be implemented;
+	
+	public void alter(V container) throws MassiveException
+	{
+		List<Object> elements = toElements(container);
+		
+		this.alterElements(elements);
+		
+		ContainerUtil.setElements(container, elements);
+	}
+	
+	public void alterElements(List<Object> elements) throws MassiveException
+	{
+		throw new MassiveException().addMsg("<b>Not yet implemented.");
+	}
 	
 	// -------------------------------------------- //
 	// PARAMETER
@@ -98,25 +176,28 @@ public abstract class CommandEditContainerAbstract<O, V> extends CommandEditAbst
 	
 	public void addParametersElement(boolean strict)
 	{
-		Type<Object> innerType = this.getValueInnerType();
+		Type<Object> elementType = this.getValueInnerType();
 		
 		if (this.isCollection())
 		{
-			this.addParameter(innerType, true);
+			this.addParameter(elementType, true);
 		}
 		else
 		{
-			Type<Object> keyType = innerType.getInnerType(0);
-			Type<Object> valueType = innerType.getInnerType(1);
-			if (strict)
+			List<Integer> userOrder = elementType.getUserOrder();
+			for (Iterator<Integer> iterator = userOrder.iterator(); iterator.hasNext();)
 			{
-				this.addParameter(keyType);
-				this.addParameter(valueType);
-			}
-			else
-			{
-				this.addParameter(null, TypeNullable.get(keyType, "any", "all"), keyType.getTypeName(), "any");
-				this.addParameter(null, TypeNullable.get(valueType, "any", "all"), valueType.getTypeName(), "any");
+				Integer indexTech = iterator.next();
+				Type<?> innerType = elementType.getInnerType(indexTech);
+				boolean concatFromHere = ! iterator.hasNext();
+				if (strict)
+				{
+					this.addParameter(innerType, concatFromHere);
+				}
+				else
+				{
+					this.addParameter(null, TypeNullable.get(innerType, "any", "all"), innerType.getName(), "any", concatFromHere);
+				}
 			}
 		}
 	}
@@ -129,10 +210,27 @@ public abstract class CommandEditContainerAbstract<O, V> extends CommandEditAbst
 		}
 		else
 		{
-			Object key = this.readArg();
-			Object value = this.readArg();
+			Object key = this.readElementInner(0);
+			Object value = this.readElementInner(1);
 			return new SimpleImmutableEntry<Object, Object>(key, value);
 		}
 	}
+	
+	public Object readElementInner(int indexTech) throws MassiveException
+	{
+		Type<Object> elementType = this.getValueInnerType();
+		Integer indexUser = elementType.getIndexUser(indexTech);
+		if (indexUser != null) return this.readArgAt(indexUser);
+		Type<Object> innerType = elementType.getInnerType(indexTech);
+		return innerType.read(sender);
+	}
+	
+	// -------------------------------------------- //
+	// ELEMENTS UTIL
+	// -------------------------------------------- //
 
+	public List<Object> toElements(V container)
+	{
+		return this.getValueType().getContainerElementsOrdered(container);
+	}
 }

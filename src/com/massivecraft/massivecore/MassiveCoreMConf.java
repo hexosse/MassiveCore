@@ -32,13 +32,9 @@ public class MassiveCoreMConf extends Entity<MassiveCoreMConf>
 	public int maxTabCompletions = 100;
 	
 	public List<String> aliasesOuterMassiveCore = MUtil.list("massivecore", "mcore");
-	
 	public List<String> aliasesOuterMassiveCoreUsys = MUtil.list("usys");
-	
 	public List<String> aliasesOuterMassiveCoreStore = MUtil.list("massivestore", "mstore");
-	
 	public List<String> aliasesOuterMassiveCoreBuffer = MUtil.list("buffer");
-	
 	public List<String> aliasesOuterMassiveCoreCmdurl = MUtil.list("cmdurl");
 	
 	public boolean usingRecipientChatEvent = true;
@@ -92,11 +88,21 @@ public class MassiveCoreMConf extends Entity<MassiveCoreMConf>
 		return getMongoDbWriteConcern(this.catchingMongoDbErrorsOnDelete);
 	}
 	
+	// -------------------------------------------- //
+	// VARIABLES
+	// -------------------------------------------- //
+	
 	public String variableBook = "***book***";
 	public boolean usingVariableBook = true;
 	
 	public String variableBuffer = "***buffer***";
 	public boolean usingVariableBuffer = true;
+	
+	// -------------------------------------------- //
+	// CLICK
+	// -------------------------------------------- //
+	
+	public SoundEffect clickSound = SoundEffect.valueOf("UI_BUTTON_CLICK", 0.75f, 1.0f);
 	
 	// -------------------------------------------- //
 	// MSTORE CONFIGURATON
@@ -107,4 +113,5 @@ public class MassiveCoreMConf extends Entity<MassiveCoreMConf>
 	public volatile long millisBetweenRemotePollWithPusher = TimeUnit.MILLIS_PER_MINUTE * 1;
 	
 	public boolean warnOnLocalAlter = false;
+
 }

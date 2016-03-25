@@ -1,21 +1,20 @@
 package com.massivecraft.massivecore.engine;
 
 import org.bukkit.event.Event.Result;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.plugin.Plugin;
-
-import com.massivecraft.massivecore.EngineAbstract;
-import com.massivecraft.massivecore.MassiveCore;
+import com.massivecraft.massivecore.Engine;
 import com.massivecraft.massivecore.chestgui.ChestAction;
 import com.massivecraft.massivecore.chestgui.ChestGui;
 import com.massivecraft.massivecore.mixin.Mixin;
 import com.massivecraft.massivecore.util.InventoryUtil;
 
-public class EngineMassiveCoreChestGui extends EngineAbstract
+public class EngineMassiveCoreChestGui extends Engine
 {
 	// -------------------------------------------- //
 	// INSTANCE & CONSTRUCT
@@ -23,16 +22,6 @@ public class EngineMassiveCoreChestGui extends EngineAbstract
 	
 	private static EngineMassiveCoreChestGui i = new EngineMassiveCoreChestGui();
 	public static EngineMassiveCoreChestGui get() { return i; }
-	
-	// -------------------------------------------- //
-	// OVERRIDE
-	// -------------------------------------------- //
-	
-	@Override
-	public Plugin getPlugin()
-	{
-		return MassiveCore.get();
-	}
 	
 	// -------------------------------------------- //
 	// LISTENER
@@ -67,8 +56,11 @@ public class EngineMassiveCoreChestGui extends EngineAbstract
 		ChestAction action = gui.getAction(index);
 		if (action == null) return;
 		
+		// ... set last action ...
+		gui.setLastAction(action);
+		
 		// ... then play the sound ...
-		gui.playSound(event.getWhoClicked());
+		gui.getSoundEffect().run(event.getWhoClicked());
 		
 		// ... close the GUI ...
 		event.getView().close();
@@ -77,12 +69,63 @@ public class EngineMassiveCoreChestGui extends EngineAbstract
 		action.onClick(event);		
 	}
 	
-	@EventHandler(priority = EventPriority.LOW)
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void onOpen(InventoryOpenEvent event)
+	{
+		// Get
+		final Inventory inventory = event.getInventory();
+		if (inventory == null) return;
+		final ChestGui gui = ChestGui.get(inventory);
+		if (gui == null) return;
+		
+		// Runnables
+		Bukkit.getScheduler().runTask(getPlugin(), new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				for (Runnable runnable : gui.getRunnablesOpen())
+				{
+					runnable.run();
+				}
+			}
+		});
+	}
+	
+	// NOTE:
+	
+	@EventHandler(priority = EventPriority.MONITOR)
 	public void onClose(InventoryCloseEvent event)
 	{
-		Inventory inventory = event.getInventory();
+		// Get
+		final Inventory inventory = event.getInventory();
 		if (inventory == null) return;
-		ChestGui.remove(inventory);
+		final ChestGui gui = ChestGui.get(inventory);
+		if (gui == null) return;
+		
+		// Runnables
+		Bukkit.getScheduler().runTask(getPlugin(), new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				for (Runnable runnable : gui.getRunnablesClose())
+				{
+					runnable.run();
+				}
+			}
+		});
+		
+		// We save the inventory in the map for a little while.
+		// A plugin may want to do something upon the chest gui closing.
+		Bukkit.getScheduler().runTaskLater(this.getPlugin(), new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				ChestGui.remove(inventory);
+			}
+		}, 20);
 	}
 
 }
